@@ -9,7 +9,9 @@ LOWER_BOUND = 'lower_bound'
 UPPER_BOUND = 'upper_bound' 
 FLOAT_NUMBER_REGEX  = r"[-+]?[0-9]*\.?[0-9]+"
 FUNCTION_INFO_REGEX = r"\((?P<" + LOWER_BOUND + r">" + FLOAT_NUMBER_REGEX + r"),\s*" + \
-                        r"(?P<" + UPPER_BOUND + r">" + FLOAT_NUMBER_REGEX + r")\)" 
+                        r"(?P<" + UPPER_BOUND + r">" + FLOAT_NUMBER_REGEX + r")\)"
+FUNCTION_INFO_DTYPE = ('float64, float64')
+DERIVATIVE_INFO_DTYPE = [('c1', [('iso','a3'), ('value','<f4')]), ('c2', [('iso','a3'), ('value','<f4')])]
 
 def rescale_axis():
 	# Rescale axis so that the map [a, b]^n -> R will be converted to 
@@ -57,23 +59,51 @@ def parse_input_file(input_file):
 	#   monotonic order and coves the end-points of the provided fuction domain.
 	pass
 
+def get_zipped_list(no_elements):
+	# Returns a list of the form: [(a, b), ...] to help generating dummy data.
+	l = np.arange(no_elements)
+	u = l[::-1]
+	return zip(l, u)
 
-def generate_function_information(input_file, n, no_divisions_per_axis):
+
+def generate_function_info(input_file, n, no_divisions_per_axis):
+	# Generate some lower and upper bounds sequences and initialize the n-dimensional array
+	# consisting of one pair for each entry.
 	no_elements = np.prod(no_divisions_per_axis) 
-	a = np.arange(no_elements).reshape(no_divisions_per_axis)
-	b = np.arange(no_elements)[::-1].reshape(no_divisions_per_axis)
-	
-	nd_array = np.array(zip(a.ravel(),b.ravel()), dtype=('f8,f8')).reshape(a.shape)
+	nd_array = np.array(get_zipped_list(no_elements), dtype=FUNCTION_INFO_DTYPE) \
+		.reshape(no_divisions_per_axis)
 
-	# Write the array to disk
+	# Write contents to file.
 	with file(input_file, 'w+') as f:
+		f.write('# Array shape: {0}\n'.format(nd_array.shape))
+		traverse_nd_array(nd_array, f, n)
+
+
+def generate_derivative_dtype(n):
+	tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
+	return [(str(dim + 1), tuple_dtype) for dim in range(n)]
+
+
+def generate_derivative_info(input_file, n, no_divisions_per_axis): 
+	# Generate some lower and upper bounds sequences and initialize the n-dimensional array
+	# consisting of 'n' tuples for each entry (corresponding to each partial derivative along
+	# the 'n' axis of the domain).
+	no_elements = np.prod(no_divisions_per_axis)
+	zipped = get_zipped_list(no_elements)
+	flat_derivative_info = zip(*[zipped for _ in range(n)])
+
+	dt = generate_derivative_dtype(n)
+	nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_divisions_per_axis)
+	print nd_array
+
+	# Write contents to file.
+	with file(input_file, 'a+') as f:
 	    f.write('# Array shape: {0}\n'.format(nd_array.shape))
 	    traverse_nd_array(nd_array, f, n)
 
 
 def traverse_nd_array(nd_array, f, depth):
-	# Function which recursively traverses an n-dimenionsal array and saves the
-	# array to file.
+	# Function which recursively traverses an n-dimenionsal array and saves the array to file.
 	if depth == 2:
 		np.savetxt(f, nd_array, fmt='%s')
 	else:
@@ -97,8 +127,7 @@ def parse_function_information(input_file, no_divisions_per_axis):
 				flat_nd_list.append((m.group(LOWER_BOUND), m.group(UPPER_BOUND)))
 
 	# Finally, convert to the shape of an n-dimensional array from the given divisions.
-	dt = ('float64, float64')
-	return np.array(flat_nd_list, dtype=dt).reshape(no_divisions_per_axis) 
+	return np.array(flat_nd_list, dtype=FUNCTION_INFO_DTYPE).reshape(no_divisions_per_axis) 
 
 
 def command_line_arguments():
@@ -131,9 +160,14 @@ def main():
 	(options, args) = command_line_arguments()
 
 	n = 2
-	no_divisions_per_axis = (4, 5)
-	generate_function_information(options.input_file, n, no_divisions_per_axis)
+	no_divisions_per_axis = (4,) * n
+	
+	print "FUNCTION INFORMATION"
+	generate_function_info(options.input_file, n, no_divisions_per_axis)
 	print parse_function_information(options.input_file, no_divisions_per_axis)
+
+	print "\nDERIVATIVE INFORMATION"
+	generate_derivative_info(options.input_file, n, no_divisions_per_axis)
 
 if __name__ == '__main__':
 	main()
