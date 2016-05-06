@@ -7,11 +7,60 @@ import numpy as np
 
 LOWER_BOUND = 'lower_bound'
 UPPER_BOUND = 'upper_bound'
-FLOAT_NUMBER_REGEX  = r"[-+]?[0-9]*\.?[0-9]+"
+
+GRID_INFO_STRING       = r'# Grid information'
+FUNCTION_INFO_STRING   = r'# Function information'
+DERIVATIVE_INFO_STRING = r'# Derivative information'
+
+FLOAT_NUMBER_REGEX  = r'[-+]?[0-9]*\.?[0-9]+'
+DIMENSION_REGEX     = r'# Dimension: (\d+)'
+FUNCTION_INFO_REGEX = FUNCTION_INFO_STRING + r"(.*\n)*" + DERIVATIVE_INFO_STRING
+
+def get_dimension_from_file(input_file):
+	with open(input_file, 'r') as f:
+		return int(re.search(DIMENSION_REGEX, f.readline()).group(1))
+
+
+def get_grid_from_file(input_file, dimension):
+	grid_list = []
+	with open(input_file, 'r') as f:
+		for line in f:
+			if line.startswith(GRID_INFO_STRING):
+				grid_list = [map(float, next(f).split()) for x in xrange(dimension)]
+				return np.array(grid_list)
+
+
+def get_function_info_from_file(input_file, dimension, no_points_per_axis):
+	function_info_lines = []
+	with open(input_file, 'r') as f:
+		for line in f:
+			if line.startswith(FUNCTION_INFO_STRING):
+				for line in f:
+					if line.startswith(DERIVATIVE_INFO_STRING):
+						break
+					function_info_lines.append(line.rstrip())
+
+	return parse_tuples_info(function_info_lines, dimension, no_points_per_axis, True)
+
+
+def get_derivative_info_from_file(input_file, dimension, no_points_per_axis):
+	derivative_info_lines = []
+	with open(input_file, 'r') as f:
+		for line in f:
+			if line.startswith(DERIVATIVE_INFO_STRING):
+				for line in f:
+					derivative_info_lines.append(line.rstrip())
+
+	return parse_tuples_info(derivative_info_lines, dimension, no_points_per_axis, False)
 
 
 def parse_input_file(input_file):
-	pass
+	dimension = get_dimension_from_file(input_file)
+	grid_info = get_grid_from_file(input_file, dimension)
+
+	no_points_per_axis = [len(grid_info[axis]) for axis in range(len(grid_info))]
+	function_info      = get_function_info_from_file(input_file, dimension, no_points_per_axis)
+	derivative_info    = get_derivative_info_from_file(input_file, dimension, no_points_per_axis)
 
 
 def generate_test_file(input_file, n, no_points_per_axis):
@@ -100,31 +149,30 @@ def build_tuple_match(n, match, is_function_info):
 		           match.group(UPPER_BOUND + "_%d" % (d + 1))) for d in range(n)])
 
 
-def get_dtype(n, is_function_info):
+def get_dtype(dimension, is_function_info):
 	if is_function_info:
 		return ('float64, float64')
 
 	tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
-	return [(str(dim + 1), tuple_dtype) for dim in range(n)]
+	return [(str(dim + 1), tuple_dtype) for dim in range(dimension)]
 
 
-def parse_tuples_info(input_file, n, no_points_per_axis, is_function_info):
+def parse_tuples_info(lines, dimension, no_points_per_axis, is_function_info):
 	flat_nd_list = []
-	regex = build_tuples_regex(n, is_function_info)
+	regex = build_tuples_regex(dimension, is_function_info)
 
-	with open(input_file) as f:
-		for line in f:
-			# Ignore possible comments in the input lines.
-			if line.startswith('#'):
-				continue
+	for line in lines:
+		# Ignore possible comments in the input lines.
+		if line.startswith('#'):
+			continue
 
-			# Append the pairs of lower and upper bounds to the flat list.
-			for match in re.finditer(regex, line):
-				flat_nd_list.append(build_tuple_match(n, match, is_function_info))
+		# Append the pairs/tuples of lower and upper bounds to the flat list.
+		for match in re.finditer(regex, line):
+			flat_nd_list.append(build_tuple_match(dimension, match, is_function_info))
 
 	# Finally, convert to the shape of an n-dimensional array from the given points.
 	return np.array(flat_nd_list, \
-		            dtype=get_dtype(n, is_function_info)).reshape(no_points_per_axis) 
+		            dtype=get_dtype(dimension, is_function_info)).reshape(no_points_per_axis) 
 
 
 def command_line_arguments():
@@ -158,9 +206,10 @@ def main():
 	(options, args) = command_line_arguments()
 
 	n = int(options.dimension)
-	no_points_per_axis = (5, ) * n
+	no_points_per_axis = tuple([x + 2 for x in range(n)])
 	
 	generate_test_file(options.input_file, n, no_points_per_axis)
+	parse_input_file(options.input_file)
 
 
 if __name__ == '__main__':
