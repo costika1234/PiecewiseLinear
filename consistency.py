@@ -64,18 +64,18 @@ def get_zipped_list(no_elements):
 	return zip(l, u)
 
 
-def build_bounds_regex_for_dimension(d):
+def build_tuples_regex_for_dimension(d):
 	return r"\((?P<" + LOWER_BOUND + r"_" + str(d) + r">" + FLOAT_NUMBER_REGEX + r"),\s*" + \
              r"(?P<" + UPPER_BOUND + r"_" + str(d) + r">" + FLOAT_NUMBER_REGEX + r")\)"	
 
 
-def build_bounds_regex(n, is_function_info):
+def build_tuples_regex(n, is_function_info):
+	# Constructs a regex to match either (x, y) - for function information, or
+	# ((a, b), (c, d), ...) - for derivative information.
 	if is_function_info:
-		return build_bounds_regex_for_dimension(1)
-	else:
-		return r"\(" + \
-			       r",\s*".join([build_bounds_regex_for_dimension(d + 1) for d in range(n)]) + \
-			   r"\)"
+		return build_tuples_regex_for_dimension(1)
+	
+	return r"\(" + r",\s*".join([build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r"\)"
 
 
 def generate_function_info(input_file, n, no_divisions_per_axis):
@@ -93,11 +93,6 @@ def generate_function_info(input_file, n, no_divisions_per_axis):
 	return nd_array
 
 
-def generate_derivative_dtype(n):
-	tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
-	return [(str(dim + 1), tuple_dtype) for dim in range(n)]
-
-
 def generate_derivative_info(input_file, n, no_divisions_per_axis): 
 	# Generate some lower and upper bounds sequences and initialize the n-dimensional array
 	# consisting of 'n' tuples for each entry (corresponding to each partial derivative along
@@ -106,7 +101,7 @@ def generate_derivative_info(input_file, n, no_divisions_per_axis):
 	zipped = get_zipped_list(no_elements)
 	flat_derivative_info = zip(*[zipped for _ in range(n)])
 
-	dt = generate_derivative_dtype(n)
+	dt = get_dtype(n, False)
 	nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_divisions_per_axis)
 
 	# Write contents to file.
@@ -128,32 +123,25 @@ def traverse_nd_array(nd_array, f, depth):
 	f.write('# End of %d depth \n' % depth)
 
 
-def parse_function_info(input_file, n, no_divisions_per_axis):
-	flat_nd_list = []
-	regex = build_bounds_regex(n, is_function_info=True)
+def build_tuple_match(n, match, is_function_info):
+	if is_function_info:
+		return tuple([match.group(LOWER_BOUND + "_1"), match.group(UPPER_BOUND + "_1")])
 
-	with open(input_file) as f:
-		for line in f:
-			# Ignore possible comments in the input lines.
-			if line.startswith('#'):
-				continue
-
-			# Append the pairs of lower and upper bounds to the flat list.
-			for m in re.finditer(regex, line):
-				flat_nd_list.append((m.group(LOWER_BOUND + "_1"), m.group(UPPER_BOUND + "_1")))
-
-	# Finally, convert to the shape of an n-dimensional array from the given divisions.
-	return np.array(flat_nd_list, dtype=FUNCTION_INFO_DTYPE).reshape(no_divisions_per_axis) 
-
-
-def build_derivative_tuple_match(n, match):
 	return tuple([(match.group(LOWER_BOUND + "_%d" % (d + 1)), \
 		           match.group(UPPER_BOUND + "_%d" % (d + 1))) for d in range(n)])
 
 
-def parse_derivative_info(input_file, n, no_divisions_per_axis):
+def get_dtype(n, is_function_info):
+	if is_function_info:
+		return ('float64, float64')
+
+	tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
+	return [(str(dim + 1), tuple_dtype) for dim in range(n)]
+
+
+def parse_tuples_info(input_file, n, no_divisions_per_axis, is_function_info):
 	flat_nd_list = []
-	regex = build_bounds_regex(n, is_function_info=False)
+	regex = build_tuples_regex(n, is_function_info)
 
 	with open(input_file) as f:
 		for line in f:
@@ -163,10 +151,11 @@ def parse_derivative_info(input_file, n, no_divisions_per_axis):
 
 			# Append the pairs of lower and upper bounds to the flat list.
 			for match in re.finditer(regex, line):
-				flat_nd_list.append(build_derivative_tuple_match(n, match))
+				flat_nd_list.append(build_tuple_match(n, match, is_function_info))
 
 	# Finally, convert to the shape of an n-dimensional array from the given divisions.
-	return np.array(flat_nd_list, dtype=generate_derivative_dtype(n)).reshape(no_divisions_per_axis) 
+	return np.array(flat_nd_list, \
+		            dtype=get_dtype(n, is_function_info)).reshape(no_divisions_per_axis) 
 
 
 def command_line_arguments():
@@ -206,14 +195,14 @@ def main():
 	
 	print "FUNCTION INFORMATION"
 	a = generate_function_info(options.input_file, n, no_divisions_per_axis)
-	b = parse_function_info(options.input_file, n, no_divisions_per_axis)
+	b = parse_tuples_info(options.input_file, n, no_divisions_per_axis, True)
 	print a
 	print b
 	print a == b
 
 	print "\nDERIVATIVE INFORMATION"
 	c = generate_derivative_info(options.input_file, n, no_divisions_per_axis)
-	d = parse_derivative_info(options.input_file, n, no_divisions_per_axis)
+	d = parse_tuples_info(options.input_file, n, no_divisions_per_axis, False)
 	print c
 	print d
 	print c == d
