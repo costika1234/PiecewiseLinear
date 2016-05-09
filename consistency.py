@@ -1,9 +1,13 @@
 #/usr/local/bin/python
  
 from optparse import OptionParser
+from cvxopt import matrix, solvers, sparse, spmatrix
 
+import itertools
 import re
 import numpy as np
+import sys
+
 
 LOWER_BOUND = 'lower_bound'
 UPPER_BOUND = 'upper_bound'
@@ -12,8 +16,8 @@ GRID_INFO_STRING       = r'# Grid information'
 FUNCTION_INFO_STRING   = r'# Function information'
 DERIVATIVE_INFO_STRING = r'# Derivative information'
 
-FLOAT_NUMBER_REGEX  = r'[-+]?[0-9]*\.?[0-9]+'
-DIMENSION_REGEX     = r'# Dimension: (\d+)'
+FLOAT_NUMBER_REGEX = r'[-+]?[0-9]*\.?[0-9]+'
+DIMENSION_REGEX    = r'# Dimension: (\d+)'
 
 ####################################################################################################
 ######################################### DATA GENERATION ##########################################
@@ -21,8 +25,8 @@ DIMENSION_REGEX     = r'# Dimension: (\d+)'
 
 def get_zipped_list(no_elements):
     # Returns a list of the form: [(a, b), ...] to help generating dummy data.
-    l = np.arange(no_elements)
-    u = l + 1
+    l = np.array([round(x, 2) for x in np.linspace(no_elements, 1.0, no_elements)])
+    u = l + no_elements
     return zip(l, u)
 
 
@@ -31,7 +35,7 @@ def get_dtype(dimension, is_function_info):
         return ('float64, float64')
 
     tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
-    return [(str(dim + 1), tuple_dtype) for dim in range(dimension)]
+    return [(str(dimension + 1), tuple_dtype) for dimension in range(dimension)]
 
 
 def traverse_nd_array(nd_array, f, depth):
@@ -59,7 +63,7 @@ def generate_tuples_info(file_descriptor, n, no_points_per_axis, is_function_inf
         flat_derivative_info = zip(*[zipped for _ in range(n)])
         nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_points_per_axis)
 
-    # Write contents to file.
+    # Write contents to file.`
     file_descriptor.write('# Array shape: {0}\n'.format(nd_array.shape))
     traverse_nd_array(nd_array, file_descriptor, n)
 
@@ -94,12 +98,12 @@ def generate_test_file(input_file, n, no_points_per_axis):
 ############################################# PARSING ##############################################
 ####################################################################################################
 
-def get_dimension_from_file(input_file):
+def init_dimension(input_file):
     with open(input_file, 'r') as f:
         return int(re.search(DIMENSION_REGEX, f.readline()).group(1))
 
 
-def get_grid_from_file(input_file, dimension):
+def init_grid_info(input_file, dimension):
     grid_list = []
     with open(input_file, 'r') as f:
         for line in f:
@@ -108,7 +112,11 @@ def get_grid_from_file(input_file, dimension):
                 return np.array(grid_list)
 
 
-def get_function_info_from_file(input_file, dimension, no_points_per_axis):
+def init_no_points_per_axis(grid_info):
+    return [len(grid_info[axis]) for axis in range(len(grid_info))]
+
+
+def init_function_info(input_file, dimension, no_points_per_axis):
     function_info_lines = []
     with open(input_file, 'r') as f:
         for line in f:
@@ -121,7 +129,7 @@ def get_function_info_from_file(input_file, dimension, no_points_per_axis):
     return parse_tuples_info(function_info_lines, dimension, no_points_per_axis, True)
 
 
-def get_derivative_info_from_file(input_file, dimension, no_points_per_axis):
+def init_derivative_info(input_file, dimension, no_points_per_axis):
     derivative_info_lines = []
     with open(input_file, 'r') as f:
         for line in f:
@@ -171,14 +179,133 @@ def parse_tuples_info(lines, dimension, no_points_per_axis, is_function_info):
     return np.array(flat_nd_list, \
                     dtype=get_dtype(dimension, is_function_info)).reshape(no_points_per_axis)
 
+####################################################################################################
+################################## LINEAR PROGRAMMING ALGORITHM ####################################
+####################################################################################################
 
-def parse_input_file(input_file):
-    dimension = get_dimension_from_file(input_file)
-    grid_info = get_grid_from_file(input_file, dimension)
+def generate_indices(no_points_per_axis, ignore_last_point_on_each_axis):
+    offset = 0
+    if ignore_last_point_on_each_axis:
+        offset = -1
 
-    no_points_per_axis = [len(grid_info[axis]) for axis in range(len(grid_info))]
-    function_info      = get_function_info_from_file(input_file, dimension, no_points_per_axis)
-    derivative_info    = get_derivative_info_from_file(input_file, dimension, no_points_per_axis)
+    return list(itertools.product(*[range(no_points + offset) for no_points in no_points_per_axis]))
+
+
+def generate_indices_without_neighbours(no_points_per_axis):
+    # TODO: optimise this method by generating the required tuples instead of resorting to
+    #       difference of sets.
+    indices = generate_indices(no_points_per_axis, False)
+    indices_allowing_neighbours = generate_indices(no_points_per_axis, True)
+
+    return set(indices) - set(indices_allowing_neighbours) 
+
+
+def generate_grid_indices_neighbours(point, n):
+    # Given a 'point' in the grid (in terms of indices), determine all its neighbours, along each
+    # dimension.
+    assert len(point) == n, "Point is not %d dimensional" % n
+
+    tuple_sum_lambda = lambda x, y: tuple(map(sum, zip(x, y)))
+    all_binary_perms = list(itertools.product([0, 1], repeat=n))
+
+    return [tuple_sum_lambda(point, perm) for perm in all_binary_perms]
+
+
+class Consistency:
+
+    def __init__(self, input_file):
+        # Domain dimension (integer).
+        self.n = init_dimension(input_file)
+
+        # Grid information (numpy array).
+        self.grid_info = init_grid_info(input_file, self.n)
+
+        # Number of points on each of the 'n' axis (list).
+        self.no_points_per_axis = init_no_points_per_axis(self.grid_info)
+
+        # Function information (n-dim numpy array of pairs).
+        self.function_info = init_function_info(input_file, self.n, self.no_points_per_axis)
+        
+        # Derivative information (n-dim numpy array of tuples).
+        self.derivative_info = init_derivative_info(input_file, self.n, self.no_points_per_axis)
+
+        # Heights information (n-dim numpy array).
+        self.h = np.zeros(self.no_points_per_axis)
+
+        # Number of decision variables (integer).
+        self.no_vars = np.prod(self.no_points_per_axis)
+
+
+    def build_LP_problem(self):
+        #print self.n
+        #print self.grid_info
+        #print self.no_points_per_axis
+        #print self.function_info
+        #print self.derivative_info
+        ones = list(itertools.repeat(1.0, self.no_vars))
+        minus_ones = list(itertools.repeat(-1.0, self.no_vars))
+        
+        ones_matrix = spmatrix(ones, range(self.no_vars), range(self.no_vars))
+        minus_ones_matrix = spmatrix(minus_ones, range(self.no_vars), range(self.no_vars))
+
+        coefficient_matrix = sparse([ones_matrix, minus_ones_matrix])
+        objective_function_vector = matrix(ones)
+
+        (lower, upper) = self.build_constraints_from_function_info()
+        print "LOWER BOUNDS:"
+        print lower
+
+        print "UPPER BOUNDS:"
+        print upper
+
+        upper_vector = matrix(upper.flatten())
+        lower_vector = matrix(lower.flatten())
+        # Need to add a minus to the lower bounds, as l <= x will be converted to -x <= - b.
+        bounds_vector = matrix([upper_vector, -lower_vector])
+
+        #print coefficient_matrix
+        #print bounds_vector
+        #print objective_function_vector
+
+        # Solve the LP problem.
+        sol = solvers.lp(objective_function_vector, coefficient_matrix, bounds_vector)
+        for index in range(self.no_vars):
+            print sol['x'][index]
+
+
+    def build_constraints_from_function_info(self):
+        # c- <= h <= c+ and optimize to get the greatest lower bound and least upper bound for the
+        # height at any point in the grid. For the contour of the domain for which the previous
+        # inequality is not defined, use the function information.
+        l_b_constraints = np.empty(self.no_points_per_axis)
+        u_b_constraints = np.empty(self.no_points_per_axis)
+        
+        l_b_constraints.fill(np.float64('-inf'))
+        u_b_constraints.fill(np.float64('inf'))
+
+        # For all the grid points that can have a neighbour, optimise the lower and upper bound
+        # constraints.
+        indices_allowing_neighbours = generate_indices(self.no_points_per_axis, True)
+        
+        for index in indices_allowing_neighbours:
+            neighbour_indices = generate_grid_indices_neighbours(index, self.n)
+
+            for neighbour_index in neighbour_indices:
+                l_b_function_value = self.function_info[neighbour_index][0]
+                u_b_function_value = self.function_info[neighbour_index][1]
+
+                l_b_constraints[index] = max(l_b_constraints[index], l_b_function_value)
+                u_b_constraints[index] = min(u_b_constraints[index], u_b_function_value)
+
+        # For the border indices (without any further neighbours in any direction), use the function
+        # information as the bounds for the heights.
+        indices_without_neighbours = generate_indices_without_neighbours(self.no_points_per_axis)
+
+        for index in indices_without_neighbours:
+            l_b_constraints[index] = self.function_info[index][0]
+            u_b_constraints[index] = self.function_info[index][1]
+
+        return (l_b_constraints, u_b_constraints)
 
 ####################################################################################################
 ##################################### COMMAND LINE ARGUMENTS #######################################
@@ -215,10 +342,12 @@ def main():
     (options, args) = command_line_arguments()
 
     n = int(options.dimension)
-    no_points_per_axis = tuple([x + 2 for x in range(n)])
+    no_points_per_axis = tuple([x + 3 for x in range(n)])
     
     generate_test_file(options.input_file, n, no_points_per_axis)
-    parse_input_file(options.input_file)
+    cons = Consistency(options.input_file)
+    # cons.build_constraints_from_function_info()
+    cons.build_LP_problem()
 
 
 if __name__ == '__main__':

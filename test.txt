@@ -1,17 +1,19 @@
 # Dimension: 2
 
 # Grid information (each of the 2 lines specify divisions on the domain axis, in strictly increasing order. The endpoints will therefore specify the constraints for the function domain):
-0.0 1.0 
 0.0 0.5 1.0 
+0.0 0.333333333333 0.666666666667 1.0 
 
 # Function information (specified as a 2-dimensional array of intervals, where an entry is of the form (c-, c+), c- < c+, and represents the constraint for the function value at a particular grid point):
-# Array shape: (2, 3)
-(0.0, 1.0) (1.0, 2.0) (2.0, 3.0)
-(3.0, 4.0) (4.0, 5.0) (5.0, 6.0)
+# Array shape: (3, 4)
+(12.0, 24.0) (11.0, 23.0) (10.0, 22.0) (9.0, 21.0)
+(8.0, 20.0) (7.0, 19.0) (6.0, 18.0) (5.0, 17.0)
+(4.0, 16.0) (3.0, 15.0) (2.0, 14.0) (1.0, 13.0)
 # End of 2 depth 
 
 # Derivative information (specified as a 2-dimensional array of tuples of intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), ci- < ci+, and represents the constraints along each partial derivative at a particular grid point):
-# Array shape: (2, 3)
-((0.0, 1.0), (0.0, 1.0)) ((1.0, 2.0), (1.0, 2.0)) ((2.0, 3.0), (2.0, 3.0))
-((3.0, 4.0), (3.0, 4.0)) ((4.0, 5.0), (4.0, 5.0)) ((5.0, 6.0), (5.0, 6.0))
+# Array shape: (3, 4)
+((12.0, 24.0), (12.0, 24.0)) ((11.0, 23.0), (11.0, 23.0)) ((10.0, 22.0), (10.0, 22.0)) ((9.0, 21.0), (9.0, 21.0))
+((8.0, 20.0), (8.0, 20.0)) ((7.0, 19.0), (7.0, 19.0)) ((6.0, 18.0), (6.0, 18.0)) ((5.0, 17.0), (5.0, 17.0))
+((4.0, 16.0), (4.0, 16.0)) ((3.0, 15.0), (3.0, 15.0)) ((2.0, 14.0), (2.0, 14.0)) ((1.0, 13.0), (1.0, 13.0))
 # End of 2 depth 
