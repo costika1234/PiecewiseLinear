@@ -151,7 +151,7 @@ def build_tuples_regex(n, is_function_info):
     # ((a, b), (c, d), ...) - for derivative information.
     if is_function_info:
         return build_tuples_regex_for_dimension(1)
-    
+
     return r"\(" + r",\s*".join([build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r"\)"
 
 
@@ -190,6 +190,23 @@ def generate_indices(no_points_per_axis, ignore_last_point_on_each_axis):
         offset = -1
 
     return list(itertools.product(*[range(no_points + offset) for no_points in no_points_per_axis]))
+
+
+def generate_indices_ignoring_last_coordinate_on_axis(no_points_per_axis, axis):
+    args = []
+    for index, no_points in enumerate(no_points_per_axis):
+        if index == axis:
+            args.append(range(no_points - 1))
+        else:
+            args.append(range(no_points))
+
+    return list(itertools.product(*args))
+
+
+def get_shape_ignoring_last_point_on_axis(no_points_per_axis, axis):
+    result = list(no_points_per_axis)
+    result[axis] = result[axis] - 1
+    return result
 
 
 def generate_indices_without_neighbours(no_points_per_axis):
@@ -254,8 +271,6 @@ def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, dis
     # 'distance' specifies the distance between the -1 and 1 entries for this block matrix.
     # TODO: Refactor this method heavily!
 
-    print "entering..."
-    print block_height
     minus_ones_and_ones = [-1] * block_height + [1] * block_height
     row_range = range(block_height) * 2
 
@@ -275,10 +290,11 @@ def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, dis
     column_range = column_range_minus_ones + [x + distance for x in column_range_minus_ones]
 
     #print minus_ones_and_ones
-    print row_range
-    print column_range
-
+    #print row_range
+    #print column_range
     print spmatrix(minus_ones_and_ones, row_range, column_range)
+
+    return spmatrix(minus_ones_and_ones, row_range, column_range)
 
 
 class Consistency:
@@ -322,6 +338,7 @@ class Consistency:
         objective_function_vector = matrix(ones)
 
         (lower, upper) = self.build_constraints_from_function_info()
+        (d_matrix, d_lower, d_upper) = self.build_constraints_from_derivative_info()
 
         print "LOWER BOUNDS:"
         print lower
@@ -334,14 +351,37 @@ class Consistency:
         # Need to add a minus to the lower bounds, as l <= x will be converted to -x <= - b.
         bounds_vector = matrix([upper_vector, -lower_vector])
 
+        d_upper_vector = matrix(d_upper)
+        d_lower_vector = matrix(d_lower)
+        d_bounds_vector = matrix([d_upper_vector, -d_lower_vector])
+
+        d_coef_matrix = matrix([d_matrix, d_matrix])
+
+        #print coefficient_matrix
+        #print bounds_vector
+        #print "============================"
+        #print d_coef_matrix
+        #print d_bounds_vector
+
+        final_coef_matrix = matrix([coefficient_matrix, d_coef_matrix])
+        final_vector = matrix([bounds_vector, d_bounds_vector])
+
+        #print len(coefficient_matrix)
+        #print len(d_coef_matrix)
+        #print len(final_coef_matrix)
+        #print len(final_vector)
+
         #print coefficient_matrix
         #print bounds_vector
         #print objective_function_vector
 
-        # Solve the LP problem.
-        sol = solvers.lp(objective_function_vector, coefficient_matrix, bounds_vector)
-        for index in range(self.no_vars):
-            print sol['x'][index]
+        # Solve the LP problem (combine constraints for both function and derivative info).
+        sol = solvers.lp(objective_function_vector, final_coef_matrix, final_vector)
+        
+        print sol['x']
+
+        #for index in range(self.no_vars):
+        #    print sol['x'][index]
 
 
     def build_constraints_from_function_info(self):
@@ -376,19 +416,41 @@ class Consistency:
             l_b_constraints[index] = self.function_info[index][0]
             u_b_constraints[index] = self.function_info[index][1]
 
-        return (l_b_constraints, u_b_constraints)
+        return (l_b_constraints, u_b_constraints) 
 
 
     def build_constraints_from_derivative_info(self):
         block_heights = calculate_block_heights(self.no_points_per_axis)
         adjacent_offsets = calculate_adjacent_sub_block_offsets(self.no_vars, self.no_points_per_axis)
-        print block_heights
+        matrices_list = []
 
         for index, block_height in enumerate(block_heights):
+            print "index =", index
             distance = calculate_distance_between_non_zero_entries(index, self.no_points_per_axis)
             no_sub_blocks = calculate_number_of_sub_blocks(index, self.no_points_per_axis)
-            print "no_sub_blocks =", no_sub_blocks
-            build_matrix_for_partial_derivative(adjacent_offsets[index], block_height, no_sub_blocks, distance)
+            # print "no_sub_blocks =", no_sub_blocks
+            matrices_list.append(build_matrix_for_partial_derivative(adjacent_offsets[index], block_height, no_sub_blocks, distance))
+
+        coef_matrix = matrix(matrices_list)
+
+        coords_ignoring_last_point = [generate_indices_ignoring_last_coordinate_on_axis(self.no_points_per_axis, i) \
+                                      for i in range(self.n)]
+
+        # Number of elements for each of the upper/lower bound column vectors.
+        no_elems_b_vec = sum([len(x) for x in coords_ignoring_last_point]) 
+        
+        l_b_constraints = np.empty(no_elems_b_vec)
+        u_b_constraints = np.empty(no_elems_b_vec)
+
+        index = 0
+       
+        for ith_partial, coords in enumerate(coords_ignoring_last_point):
+            for coord in coords:
+                l_b_constraints[index] = self.derivative_info[coord][ith_partial][0]
+                u_b_constraints[index] = self.derivative_info[coord][ith_partial][1]
+                index = index + 1
+
+        return (coef_matrix, np.array(l_b_constraints), np.array(u_b_constraints))
 
 ####################################################################################################
 ##################################### COMMAND LINE ARGUMENTS #######################################
@@ -425,14 +487,12 @@ def main():
     (options, args) = command_line_arguments()
 
     n = int(options.dimension)
-    no_points_per_axis = tuple([x + 2 for x in range(n)])
+    no_points_per_axis = tuple([x + 3 for x in range(n)])
     printing.options['width'] = 30
     
     generate_test_file(options.input_file, n, no_points_per_axis)
     cons = Consistency(options.input_file)
-    cons.build_constraints_from_derivative_info()
-    print "--------------------"
-    #cons.build_LP_problem()
+    cons.build_LP_problem()
 
 
 if __name__ == '__main__':
