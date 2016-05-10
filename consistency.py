@@ -1,7 +1,8 @@
 #/usr/local/bin/python
  
+from cvxopt import matrix, solvers, sparse, spmatrix, printing
+from operator import mul
 from optparse import OptionParser
-from cvxopt import matrix, solvers, sparse, spmatrix
 
 import itertools
 import re
@@ -211,6 +212,75 @@ def generate_grid_indices_neighbours(point, n):
     return [tuple_sum_lambda(point, perm) for perm in all_binary_perms]
 
 
+def calculate_block_heights(no_points_per_axis):
+    dimensions_prod = reduce(mul, no_points_per_axis)
+    return [dimensions_prod / no_points_per_axis[i] * (no_points_per_axis[i] - 1) \
+            for i in range(len(no_points_per_axis))]
+
+
+def calculate_number_of_sub_blocks(ith_partial_derivative, no_points_per_axis):
+    if ith_partial_derivative == 0:
+        return 1
+
+    return reduce(mul, no_points_per_axis[:ith_partial_derivative])
+
+
+def calculate_distance_between_non_zero_entries(ith_partial_derivative, no_points_per_axis):
+    if ith_partial_derivative == len(no_points_per_axis) - 1:
+        return 1
+
+    return reduce(mul, no_points_per_axis[(ith_partial_derivative + 1):])
+
+
+def calculate_adjacent_sub_block_offsets(width, no_points_per_axis):
+    block_heights = calculate_block_heights(no_points_per_axis)
+
+    result = []
+    for index, no_points in enumerate(no_points_per_axis):
+        no_sub_blocks = calculate_number_of_sub_blocks(index, no_points_per_axis)
+        if no_sub_blocks == 1:
+            result += [0]
+        else:
+            sub_block_width = width / no_sub_blocks
+            sub_block_height = block_heights[index] / no_sub_blocks
+            result += [sub_block_width - sub_block_height]
+
+    return result
+
+
+def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, distance):
+    # 'block_height' specifies the height of the current block matrix.
+    # 'no_sub_blocks' specifies the number of subblocks in the current block matrix.
+    # 'distance' specifies the distance between the -1 and 1 entries for this block matrix.
+    # TODO: Refactor this method heavily!
+
+    print "entering..."
+    print block_height
+    minus_ones_and_ones = [-1] * block_height + [1] * block_height
+    row_range = range(block_height) * 2
+
+    if no_sub_blocks == 1:
+        column_range_minus_ones = range(block_height)
+    else:
+        column_range_minus_ones = []
+
+        n = 0
+        for index in range(block_height):
+            if index % (block_height / no_sub_blocks) == 0 and index != 0:
+                n = n + offset
+        
+            column_range_minus_ones += [n]
+            n = n + 1
+
+    column_range = column_range_minus_ones + [x + distance for x in column_range_minus_ones]
+
+    #print minus_ones_and_ones
+    print row_range
+    print column_range
+
+    print spmatrix(minus_ones_and_ones, row_range, column_range)
+
+
 class Consistency:
 
     def __init__(self, input_file):
@@ -252,6 +322,7 @@ class Consistency:
         objective_function_vector = matrix(ones)
 
         (lower, upper) = self.build_constraints_from_function_info()
+
         print "LOWER BOUNDS:"
         print lower
 
@@ -307,6 +378,18 @@ class Consistency:
 
         return (l_b_constraints, u_b_constraints)
 
+
+    def build_constraints_from_derivative_info(self):
+        block_heights = calculate_block_heights(self.no_points_per_axis)
+        adjacent_offsets = calculate_adjacent_sub_block_offsets(self.no_vars, self.no_points_per_axis)
+        print block_heights
+
+        for index, block_height in enumerate(block_heights):
+            distance = calculate_distance_between_non_zero_entries(index, self.no_points_per_axis)
+            no_sub_blocks = calculate_number_of_sub_blocks(index, self.no_points_per_axis)
+            print "no_sub_blocks =", no_sub_blocks
+            build_matrix_for_partial_derivative(adjacent_offsets[index], block_height, no_sub_blocks, distance)
+
 ####################################################################################################
 ##################################### COMMAND LINE ARGUMENTS #######################################
 ####################################################################################################
@@ -342,12 +425,14 @@ def main():
     (options, args) = command_line_arguments()
 
     n = int(options.dimension)
-    no_points_per_axis = tuple([x + 3 for x in range(n)])
+    no_points_per_axis = tuple([x + 2 for x in range(n)])
+    printing.options['width'] = 30
     
     generate_test_file(options.input_file, n, no_points_per_axis)
     cons = Consistency(options.input_file)
-    # cons.build_constraints_from_function_info()
-    cons.build_LP_problem()
+    cons.build_constraints_from_derivative_info()
+    print "--------------------"
+    #cons.build_LP_problem()
 
 
 if __name__ == '__main__':
