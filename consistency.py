@@ -490,7 +490,7 @@ def main():
     no_points_per_axis = tuple([x + 3 for x in range(n)])
     printing.options['width'] = 30
     
-    generate_test_file(options.input_file, n, no_points_per_axis)
+    #generate_test_file(options.input_file, n, no_points_per_axis)
     cons = Consistency(options.input_file)
     cons.build_LP_problem()
 
