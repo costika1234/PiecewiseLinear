@@ -372,7 +372,7 @@ class Consistency:
         #print final_coef_matrix
         #print final_vector
 
-        #self.display_LP_problem(final_coef_matrix, final_vector)
+        self.display_LP_problem(final_coef_matrix, final_vector)
 
         #print len(coefficient_matrix)
         #print len(d_coef_matrix)
@@ -406,12 +406,16 @@ class Consistency:
         no_rows = coef_matrix.size[0]
         no_cols = coef_matrix.size[1]
 
+        no_d_constraints = (no_rows - 2 * self.no_vars) / 2
+
         print "LP problem:\n"
 
         for row in range(no_rows):
-            non_zeros_indices = [(row + col * no_rows) for col in range(no_cols) if coef_matrix[row + col * no_rows] != 0.0]
+            non_zeros_indices = [(row + col * no_rows) for col in range(no_cols) \
+                                  if coef_matrix[row + col * no_rows] != 0.0]
             # [(value, true_row, true_col)]
-            true_non_zero_indices = [(coef_matrix[non_zeros_index], row, non_zeros_index / no_rows) for non_zeros_index in non_zeros_indices]
+            true_non_zero_indices = [(coef_matrix[non_zeros_index], row, non_zeros_index / no_rows)\
+                                     for non_zeros_index in non_zeros_indices]
             terms = []
 
             for true_non_zero_index in true_non_zero_indices:
@@ -424,9 +428,13 @@ class Consistency:
                 terms.append(term)
 
             if len(true_non_zero_indices) == 1:
-                print terms[0] + ' <= ' + str(vector[row])
+                if row < self.no_vars:
+                    print str(-vector[row + self.no_vars]) + \
+                        ' <= ' + terms[0] + ' <= ' + str(vector[row])
             else:
-                print terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
+                if row < no_rows - no_d_constraints: 
+                    print str(-vector[row + no_d_constraints]) + \
+                        ' <= ' + terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
 
 
     def build_constraints_from_function_info(self):
@@ -503,6 +511,7 @@ class Consistency:
 
     def plot_3D_objects_for_2D_case(self):
         if self.n != 2:
+            print "Plotting is only available for the 2D domain."
             return
 
         grid_points = generate_indices(self.no_points_per_axis, False)
@@ -511,12 +520,27 @@ class Consistency:
         y = [self.grid_info[1][index] for index in y]
         z = self.heights.flatten()
 
+        print "z_values:"
+        print z
+
         fig = plt.figure()
         ax = fig.gca(projection='3d')
-        ax.plot_trisurf(x, y, z, cmap='BuGn', linewidth=1.0, antialiased=False)
+        # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in 
+        # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
+        triangles = []
 
-        # ax.set_xlim3d(0, 1)
-        # ax.set_ylim3d(0, 1)
+        x_dim = self.no_points_per_axis[0]
+        y_dim = self.no_points_per_axis[1]
+
+        for i in range(y_dim - 1):
+            for j in range(x_dim - 1):
+                bottom_left_label = x_dim * i + j
+                triangles.append([bottom_left_label, bottom_left_label + 1, bottom_left_label + 3])
+                triangles.append([bottom_left_label + 1, bottom_left_label + 4, bottom_left_label + 3])
+
+        #print triangles
+
+        ax.plot_trisurf(x, y, z, cmap='BuGn', linewidth=1.0, antialiased=False, triangles=None)
 
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')
