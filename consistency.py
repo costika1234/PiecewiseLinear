@@ -520,8 +520,6 @@ class Consistency:
         y = [self.grid_info[1][index] for index in y]
         z = self.heights.flatten()
 
-        print "z_values:"
-        print z
 
         fig = plt.figure()
         ax = fig.gca(projection='3d')
@@ -532,15 +530,13 @@ class Consistency:
         x_dim = self.no_points_per_axis[0]
         y_dim = self.no_points_per_axis[1]
 
-        for i in range(y_dim - 1):
-            for j in range(x_dim - 1):
-                bottom_left_label = x_dim * i + j
-                triangles.append([bottom_left_label, bottom_left_label + 1, bottom_left_label + 3])
-                triangles.append([bottom_left_label + 1, bottom_left_label + 4, bottom_left_label + 3])
+        for i in range(x_dim - 1):
+            for j in range(y_dim - 1):
+                label = y_dim * i + j
+                triangles.append([label, label + 4, label + 1])
+                triangles.append([label + 4, label + 5, label + 1])
 
-        #print triangles
-
-        ax.plot_trisurf(x, y, z, cmap='BuGn', linewidth=1.0, antialiased=False, triangles=None)
+        ax.plot_trisurf(x, y, z, cmap='BuGn', linewidth=1.0, antialiased=False, triangles=triangles)
 
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')
@@ -548,6 +544,8 @@ class Consistency:
 
         plt.xticks(self.grid_info[0])
         plt.yticks(self.grid_info[1])
+
+        ax.set_zlim(min(z) - 2.0, max(z) + 2.0)
 
         plt.show()
 
