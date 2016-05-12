@@ -358,7 +358,7 @@ class Consistency:
         d_lower_vector = matrix(d_lower)
         d_bounds_vector = matrix([d_upper_vector, -d_lower_vector])
 
-        d_coef_matrix = matrix([d_matrix, d_matrix])
+        d_coef_matrix = matrix([d_matrix, -d_matrix])
 
         #print coefficient_matrix
         #print bounds_vector
@@ -368,6 +368,11 @@ class Consistency:
 
         final_coef_matrix = matrix([coefficient_matrix, d_coef_matrix])
         final_vector = matrix([bounds_vector, d_bounds_vector])
+
+        #print final_coef_matrix
+        #print final_vector
+
+        #self.display_LP_problem(final_coef_matrix, final_vector)
 
         #print len(coefficient_matrix)
         #print len(d_coef_matrix)
@@ -385,12 +390,43 @@ class Consistency:
         flat_heights = np.empty(self.no_vars)
 
         if sol['x'] is not None:
+            print "SOLUTION FOUND:"
             for index in range(self.no_vars):
                 flat_heights[index] = sol['x'][index]
 
-        self.heights = flat_heights.reshape(self.no_points_per_axis)
+            self.heights = flat_heights.reshape(self.no_points_per_axis)
 
-        print np.around(self.heights, decimals=2)
+            print np.around(self.heights, decimals=2)
+        else:
+            print "NO SOLUTION"
+
+
+    def display_LP_problem(self, coef_matrix, vector):
+        grid_indices = generate_indices(self.no_points_per_axis, False)
+        no_rows = coef_matrix.size[0]
+        no_cols = coef_matrix.size[1]
+
+        print "LP problem:\n"
+
+        for row in range(no_rows):
+            non_zeros_indices = [(row + col * no_rows) for col in range(no_cols) if coef_matrix[row + col * no_rows] != 0.0]
+            # [(value, true_row, true_col)]
+            true_non_zero_indices = [(coef_matrix[non_zeros_index], row, non_zeros_index / no_rows) for non_zeros_index in non_zeros_indices]
+            terms = []
+
+            for true_non_zero_index in true_non_zero_indices:
+                is_one = true_non_zero_index[0] == 1.0
+                tup = grid_indices[true_non_zero_index[2]]
+                term = 'h_' + ','.join([str(t) for t in tup])
+                if not is_one:
+                    term = '- ' + term
+
+                terms.append(term)
+
+            if len(true_non_zero_indices) == 1:
+                print terms[0] + ' <= ' + str(vector[row])
+            else:
+                print terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
 
 
     def build_constraints_from_function_info(self):
@@ -453,9 +489,6 @@ class Consistency:
         index = 0
        
         for ith_partial, coords in enumerate(coords_ignoring_last_point):
-            print ith_partial
-            print coords
-
             for coord in coords:
                 next_index = coord[ith_partial] + 1
                 current_index = coord[ith_partial]
@@ -488,6 +521,9 @@ class Consistency:
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')
         ax.set_zlabel('Z axis')
+
+        plt.xticks(self.grid_info[0])
+        plt.yticks(self.grid_info[1])
 
         plt.show()
 
@@ -529,7 +565,7 @@ def main():
     no_points_per_axis = tuple([x + 3 for x in range(n)])
     printing.options['width'] = 30
     
-    generate_test_file(options.input_file, n, no_points_per_axis)
+    #generate_test_file(options.input_file, n, no_points_per_axis)
     cons = Consistency(options.input_file)
     cons.build_LP_problem()
     cons.plot_3D_objects_for_2D_case()
