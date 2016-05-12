@@ -1,12 +1,14 @@
 #/usr/local/bin/python
  
 from cvxopt import matrix, solvers, sparse, spmatrix, printing
+from mpl_toolkits.mplot3d import Axes3D
 from operator import mul
 from optparse import OptionParser
 
 import itertools
-import re
+import matplotlib.pyplot as plt
 import numpy as np
+import re
 import sys
 
 
@@ -204,6 +206,7 @@ def generate_indices_ignoring_last_coordinate_on_axis(no_points_per_axis, axis):
 
 
 def get_shape_ignoring_last_point_on_axis(no_points_per_axis, axis):
+    # Need to create a copy so that we do not overwrite values passed by reference.
     result = list(no_points_per_axis)
     result[axis] = result[axis] - 1
     return result
@@ -316,7 +319,7 @@ class Consistency:
         self.derivative_info = init_derivative_info(input_file, self.n, self.no_points_per_axis)
 
         # Heights information (n-dim numpy array).
-        self.h = np.zeros(self.no_points_per_axis)
+        self.heights = np.zeros(self.no_points_per_axis)
 
         # Number of decision variables (integer).
         self.no_vars = np.prod(self.no_points_per_axis)
@@ -377,11 +380,17 @@ class Consistency:
 
         # Solve the LP problem (combine constraints for both function and derivative info).
         sol = solvers.lp(objective_function_vector, final_coef_matrix, final_vector)
-        
-        print sol['x']
+        #print sol['x']
 
-        #for index in range(self.no_vars):
-        #    print sol['x'][index]
+        flat_heights = np.empty(self.no_vars)
+
+        if sol['x'] is not None:
+            for index in range(self.no_vars):
+                flat_heights[index] = sol['x'][index]
+
+        self.heights = flat_heights.reshape(self.no_points_per_axis)
+
+        print np.around(self.heights, decimals=2)
 
 
     def build_constraints_from_function_info(self):
@@ -425,7 +434,6 @@ class Consistency:
         matrices_list = []
 
         for index, block_height in enumerate(block_heights):
-            print "index =", index
             distance = calculate_distance_between_non_zero_entries(index, self.no_points_per_axis)
             no_sub_blocks = calculate_number_of_sub_blocks(index, self.no_points_per_axis)
             # print "no_sub_blocks =", no_sub_blocks
@@ -445,12 +453,43 @@ class Consistency:
         index = 0
        
         for ith_partial, coords in enumerate(coords_ignoring_last_point):
+            print ith_partial
+            print coords
+
             for coord in coords:
-                l_b_constraints[index] = self.derivative_info[coord][ith_partial][0]
-                u_b_constraints[index] = self.derivative_info[coord][ith_partial][1]
+                next_index = coord[ith_partial] + 1
+                current_index = coord[ith_partial]
+                grid_difference = self.grid_info[ith_partial][next_index] - \
+                                  self.grid_info[ith_partial][current_index]
+                l_b_constraints[index] = grid_difference * self.derivative_info[coord][ith_partial][0]
+                u_b_constraints[index] = grid_difference * self.derivative_info[coord][ith_partial][1]
                 index = index + 1
 
         return (coef_matrix, np.array(l_b_constraints), np.array(u_b_constraints))
+
+
+    def plot_3D_objects_for_2D_case(self):
+        if self.n != 2:
+            return
+
+        grid_points = generate_indices(self.no_points_per_axis, False)
+        x, y = [list(tup) for tup in zip(*grid_points)]
+        x = [self.grid_info[0][index] for index in x]
+        y = [self.grid_info[1][index] for index in y]
+        z = self.heights.flatten()
+
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        ax.plot_trisurf(x, y, z, cmap='BuGn', linewidth=1.0, antialiased=False)
+
+        # ax.set_xlim3d(0, 1)
+        # ax.set_ylim3d(0, 1)
+
+        ax.set_xlabel('X axis')
+        ax.set_ylabel('Y axis')
+        ax.set_zlabel('Z axis')
+
+        plt.show()
 
 ####################################################################################################
 ##################################### COMMAND LINE ARGUMENTS #######################################
@@ -490,10 +529,10 @@ def main():
     no_points_per_axis = tuple([x + 3 for x in range(n)])
     printing.options['width'] = 30
     
-    #generate_test_file(options.input_file, n, no_points_per_axis)
+    generate_test_file(options.input_file, n, no_points_per_axis)
     cons = Consistency(options.input_file)
     cons.build_LP_problem()
-
+    cons.plot_3D_objects_for_2D_case()
 
 if __name__ == '__main__':
     main()
