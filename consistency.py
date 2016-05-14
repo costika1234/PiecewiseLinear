@@ -1,6 +1,6 @@
 #/usr/local/bin/python
  
-from cvxopt import matrix, solvers, sparse, spmatrix, printing
+from cvxopt import matrix, solvers, sparse, spmatrix
 from mpl_toolkits.mplot3d import Axes3D
 from operator import mul
 from optparse import OptionParser
@@ -28,8 +28,17 @@ DIMENSION_REGEX    = r'# Dimension: (\d+)'
 
 def get_zipped_list(no_elements):
     # Returns a list of the form: [(a, b), ...] to help generating dummy data.
-    l = np.array([round(x, 2) for x in np.linspace(no_elements, 1.0, no_elements)])
-    u = l + no_elements
+    # l = np.array([round(x, 2) for x in np.linspace(no_elements, 1.0, no_elements)])
+    l = np.random.randint(10, 20, no_elements)
+    # u = l + no_elements
+    u = l + 10
+    return zip(l, u)
+
+
+def get_zipped_list_2(no_elements):
+    # Returns a list of the form: [(a, b), ...] to help generating dummy data.
+    l = np.random.randint(-20, 0, no_elements)
+    u = l + 20
     return zip(l, u)
 
 
@@ -62,7 +71,7 @@ def generate_tuples_info(file_descriptor, n, no_points_per_axis, is_function_inf
         nd_array = np.array(flat_function_info, dtype=dt).reshape(no_points_per_axis)
     else:
         # Create flat array with tuples ((c1-, c1+), (c2-, c2+), ...).
-        zipped = get_zipped_list(no_elements)
+        zipped = get_zipped_list_2(no_elements)
         flat_derivative_info = zip(*[zipped for _ in range(n)])
         nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_points_per_axis)
 
@@ -71,7 +80,11 @@ def generate_tuples_info(file_descriptor, n, no_points_per_axis, is_function_inf
     traverse_nd_array(nd_array, file_descriptor, n)
 
 
-def generate_test_file(input_file, n, no_points_per_axis):
+def generate_test_file(input_file, n):
+    # Initialize the number of points on each axis that will determine the grid.
+    # no_points_per_axis = tuple([x + 10 for x in range(n)])
+    no_points_per_axis = tuple([19] * n)
+
     with open(input_file, 'w+') as f:
         # Dimension.
         f.write('# Dimension: %d\n\n' % n)
@@ -292,11 +305,6 @@ def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, dis
 
     column_range = column_range_minus_ones + [x + distance for x in column_range_minus_ones]
 
-    #print minus_ones_and_ones
-    #print row_range
-    #print column_range
-    print spmatrix(minus_ones_and_ones, row_range, column_range)
-
     return spmatrix(minus_ones_and_ones, row_range, column_range)
 
 
@@ -318,123 +326,43 @@ class Consistency:
         # Derivative information (n-dim numpy array of tuples).
         self.derivative_info = init_derivative_info(input_file, self.n, self.no_points_per_axis)
 
-        # Heights information (n-dim numpy array).
-        self.heights = np.zeros(self.no_points_per_axis)
+        # Minimum heights for least witness of consistency (n-dim numpy array).
+        self.min_heights = np.zeros(self.no_points_per_axis)
+
+        # Maximum heights for greatest witness of consistency (n-dim numpy array).
+        self.max_heights = np.zeros(self.no_points_per_axis)
 
         # Number of decision variables (integer).
         self.no_vars = np.prod(self.no_points_per_axis)
 
 
-    def build_LP_problem(self):
-        #print self.n
-        #print self.grid_info
-        #print self.no_points_per_axis
-        #print self.function_info
-        #print self.derivative_info
-        ones = list(itertools.repeat(1.0, self.no_vars))
-        minus_ones = list(itertools.repeat(-1.0, self.no_vars))
+    def solve_LP_problem(self):
+        (f_coef_matrix, f_column_vector) = self.build_function_coef_matrix_and_column_vector()
+        (d_coef_matrix, d_column_vector) = self.build_derivative_coef_matrix_and_column_vector()        
         
-        ones_matrix = spmatrix(ones, range(self.no_vars), range(self.no_vars))
-        minus_ones_matrix = spmatrix(minus_ones, range(self.no_vars), range(self.no_vars))
+        # Solve the LP problem by combining constraints for both function and derivative info.
+        objective_function_vector = matrix(list(itertools.repeat(1.0, self.no_vars)))
+        coef_matrix = matrix([f_coef_matrix, d_coef_matrix])
+        column_vector = matrix([f_column_vector, d_column_vector])
+        
+        min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
 
-        coefficient_matrix = sparse([ones_matrix, minus_ones_matrix])
-        objective_function_vector = matrix(ones)
+        # Print the LP problem for debugging purposes.
+        self.display_LP_problem(coef_matrix, column_vector)
 
-        (lower, upper) = self.build_constraints_from_function_info()
-        (d_matrix, d_lower, d_upper) = self.build_constraints_from_derivative_info()
+        if min_sol['x'] is not None:
+            self.min_heights = np.array(min_sol['x']).reshape(self.no_points_per_axis)
+            print np.around(self.min_heights, decimals=2)
 
-        print "LOWER BOUNDS:"
-        print lower
+            # Since consistency has been established, solve the converse LP problem to get the
+            # maximal bounding surface.
 
-        print "UPPER BOUNDS:"
-        print upper
+            max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
+            self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
+            print np.around(self.max_heights, decimals=2)
 
-        upper_vector = matrix(upper.flatten())
-        lower_vector = matrix(lower.flatten())
-        # Need to add a minus to the lower bounds, as l <= x will be converted to -x <= - b.
-        bounds_vector = matrix([upper_vector, -lower_vector])
-
-        d_upper_vector = matrix(d_upper)
-        d_lower_vector = matrix(d_lower)
-        d_bounds_vector = matrix([d_upper_vector, -d_lower_vector])
-
-        d_coef_matrix = matrix([d_matrix, -d_matrix])
-
-        #print coefficient_matrix
-        #print bounds_vector
-        #print "============================"
-        #print d_coef_matrix
-        #print d_bounds_vector
-
-        final_coef_matrix = matrix([coefficient_matrix, d_coef_matrix])
-        final_vector = matrix([bounds_vector, d_bounds_vector])
-
-        #print final_coef_matrix
-        #print final_vector
-
-        self.display_LP_problem(final_coef_matrix, final_vector)
-
-        #print len(coefficient_matrix)
-        #print len(d_coef_matrix)
-        #print len(final_coef_matrix)
-        #print len(final_vector)
-
-        #print coefficient_matrix
-        #print bounds_vector
-        #print objective_function_vector
-
-        # Solve the LP problem (combine constraints for both function and derivative info).
-        sol = solvers.lp(objective_function_vector, final_coef_matrix, final_vector)
-        #print sol['x']
-
-        flat_heights = np.empty(self.no_vars)
-
-        if sol['x'] is not None:
-            print "SOLUTION FOUND:"
-            for index in range(self.no_vars):
-                flat_heights[index] = sol['x'][index]
-
-            self.heights = flat_heights.reshape(self.no_points_per_axis)
-
-            print np.around(self.heights, decimals=2)
         else:
-            print "NO SOLUTION"
-
-
-    def display_LP_problem(self, coef_matrix, vector):
-        grid_indices = generate_indices(self.no_points_per_axis, False)
-        no_rows = coef_matrix.size[0]
-        no_cols = coef_matrix.size[1]
-
-        no_d_constraints = (no_rows - 2 * self.no_vars) / 2
-
-        print "LP problem:\n"
-
-        for row in range(no_rows):
-            non_zeros_indices = [(row + col * no_rows) for col in range(no_cols) \
-                                  if coef_matrix[row + col * no_rows] != 0.0]
-            # [(value, true_row, true_col)]
-            true_non_zero_indices = [(coef_matrix[non_zeros_index], row, non_zeros_index / no_rows)\
-                                     for non_zeros_index in non_zeros_indices]
-            terms = []
-
-            for true_non_zero_index in true_non_zero_indices:
-                is_one = true_non_zero_index[0] == 1.0
-                tup = grid_indices[true_non_zero_index[2]]
-                term = 'h_' + ','.join([str(t) for t in tup])
-                if not is_one:
-                    term = '- ' + term
-
-                terms.append(term)
-
-            if len(true_non_zero_indices) == 1:
-                if row < self.no_vars:
-                    print str(-vector[row + self.no_vars]) + \
-                        ' <= ' + terms[0] + ' <= ' + str(vector[row])
-            else:
-                if row < no_rows - no_d_constraints: 
-                    print str(-vector[row + no_d_constraints]) + \
-                        ' <= ' + terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
+            print "No witness for consistency found."
 
 
     def build_constraints_from_function_info(self):
@@ -472,21 +400,27 @@ class Consistency:
         return (l_b_constraints, u_b_constraints) 
 
 
+    def build_function_coef_matrix_and_column_vector(self):
+        ones = list(itertools.repeat(1.0, self.no_vars))
+        ones_matrix = spmatrix(ones, range(self.no_vars), range(self.no_vars))
+        minus_ones_matrix = -spmatrix(ones, range(self.no_vars), range(self.no_vars))
+        
+        coef_matrix = sparse([ones_matrix, minus_ones_matrix])
+
+        (l_b_constraints, u_b_constraints) = self.build_constraints_from_function_info()
+        flat_l_b_constraints = matrix(l_b_constraints.flatten())
+        flat_u_b_constraints = matrix(u_b_constraints.flatten())
+        
+        # l <= x constraint will be rewritten as -x <= -l.
+        column_vector = matrix([flat_u_b_constraints, -flat_l_b_constraints])
+
+        return (coef_matrix, column_vector)
+
+
     def build_constraints_from_derivative_info(self):
-        block_heights = calculate_block_heights(self.no_points_per_axis)
-        adjacent_offsets = calculate_adjacent_sub_block_offsets(self.no_vars, self.no_points_per_axis)
-        matrices_list = []
-
-        for index, block_height in enumerate(block_heights):
-            distance = calculate_distance_between_non_zero_entries(index, self.no_points_per_axis)
-            no_sub_blocks = calculate_number_of_sub_blocks(index, self.no_points_per_axis)
-            # print "no_sub_blocks =", no_sub_blocks
-            matrices_list.append(build_matrix_for_partial_derivative(adjacent_offsets[index], block_height, no_sub_blocks, distance))
-
-        coef_matrix = matrix(matrices_list)
-
-        coords_ignoring_last_point = [generate_indices_ignoring_last_coordinate_on_axis(self.no_points_per_axis, i) \
-                                      for i in range(self.n)]
+        coords_ignoring_last_point \
+            = [generate_indices_ignoring_last_coordinate_on_axis(self.no_points_per_axis, i) \
+               for i in range(self.n)]
 
         # Number of elements for each of the upper/lower bound column vectors.
         no_elems_b_vec = sum([len(x) for x in coords_ignoring_last_point]) 
@@ -500,26 +434,51 @@ class Consistency:
             for coord in coords:
                 next_index = coord[ith_partial] + 1
                 current_index = coord[ith_partial]
-                grid_difference = self.grid_info[ith_partial][next_index] - \
-                                  self.grid_info[ith_partial][current_index]
-                l_b_constraints[index] = grid_difference * self.derivative_info[coord][ith_partial][0]
-                u_b_constraints[index] = grid_difference * self.derivative_info[coord][ith_partial][1]
+                grid_diff = self.grid_info[ith_partial][next_index] - \
+                            self.grid_info[ith_partial][current_index]
+                l_b_constraints[index] = grid_diff * self.derivative_info[coord][ith_partial][0]
+                u_b_constraints[index] = grid_diff * self.derivative_info[coord][ith_partial][1]
                 index = index + 1
 
-        return (coef_matrix, np.array(l_b_constraints), np.array(u_b_constraints))
+        return (l_b_constraints, u_b_constraints)
+
+
+    def build_derivative_coef_matrix_and_column_vector(self):
+        block_heights = calculate_block_heights(self.no_points_per_axis)
+        adjacent_offsets = calculate_adjacent_sub_block_offsets(self.no_vars, 
+                                                                self.no_points_per_axis)
+        matrices_list = []
+
+        for index, block_height in enumerate(block_heights):
+            distance = calculate_distance_between_non_zero_entries(index, self.no_points_per_axis)
+            no_sub_blocks = calculate_number_of_sub_blocks(index, self.no_points_per_axis)
+            matrices_list.append(build_matrix_for_partial_derivative(adjacent_offsets[index],
+                                 block_height, no_sub_blocks, distance))
+
+        upper_half_matrix = sparse(matrices_list)
+        coef_matrix = sparse([upper_half_matrix, -upper_half_matrix])
+        
+        (l_b_constraints, u_b_constraints) = self.build_constraints_from_derivative_info()
+        flat_l_b_constraints = matrix(l_b_constraints)
+        flat_u_b_constraints = matrix(u_b_constraints)
+
+        # l <= x constraint will be rewritten as -x <= -l.
+        column_vector = matrix([flat_u_b_constraints, -flat_l_b_constraints])
+
+        return (coef_matrix, column_vector)
 
 
     def plot_3D_objects_for_2D_case(self):
         if self.n != 2:
-            print "Plotting is only available for the 2D domain."
+            print "Plotting is only available for 2D domain."
             return
 
         grid_points = generate_indices(self.no_points_per_axis, False)
         x, y = [list(tup) for tup in zip(*grid_points)]
         x = [self.grid_info[0][index] for index in x]
         y = [self.grid_info[1][index] for index in y]
-        z = self.heights.flatten()
-
+        min_z = self.min_heights.flatten()
+        max_z = self.max_heights.flatten()
 
         fig = plt.figure()
         ax = fig.gca(projection='3d')
@@ -533,10 +492,13 @@ class Consistency:
         for i in range(x_dim - 1):
             for j in range(y_dim - 1):
                 label = y_dim * i + j
-                triangles.append([label, label + 4, label + 1])
-                triangles.append([label + 4, label + 5, label + 1])
+                triangles.append([label, label + y_dim, label + 1])
+                triangles.append([label + y_dim, label + y_dim + 1, label + 1])
 
-        ax.plot_trisurf(x, y, z, cmap='BuGn', linewidth=1.0, antialiased=False, triangles=triangles)
+        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=1.0, antialiased=False, 
+                        triangles=triangles)
+        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=1.0, antialiased=False, 
+                        triangles=triangles)
 
         ax.set_xlabel('X axis')
         ax.set_ylabel('Y axis')
@@ -545,9 +507,45 @@ class Consistency:
         plt.xticks(self.grid_info[0])
         plt.yticks(self.grid_info[1])
 
-        ax.set_zlim(min(z) - 2.0, max(z) + 2.0)
+
+        ax.set_zlim(0.95 * min(min_z) , max(max_z) * 1.05)
 
         plt.show()
+
+
+    def display_LP_problem(self, coef_matrix, vector):
+        grid_indices = generate_indices(self.no_points_per_axis, False)
+        no_rows = coef_matrix.size[0]
+        no_cols = coef_matrix.size[1]
+        no_d_constraints = (no_rows - 2 * self.no_vars) / 2
+
+        print "LP problem:"
+
+        for row in range(no_rows):
+            non_zeros_indices = [(row + col * no_rows) for col in range(no_cols) \
+                                  if coef_matrix[row + col * no_rows] != 0.0]
+            # List of type [(value, true_row, true_col)], where value is either 1 or -1.
+            true_non_zero_indices = [(coef_matrix[non_zeros_index], row, non_zeros_index / no_rows)\
+                                     for non_zeros_index in non_zeros_indices]
+            terms = []
+
+            for true_non_zero_index in true_non_zero_indices:
+                is_one = true_non_zero_index[0] == 1.0
+                tup = grid_indices[true_non_zero_index[2]]
+                term = 'h_' + ','.join([str(t) for t in tup])
+                if not is_one:
+                    term = '- ' + term
+
+                terms.append(term)
+
+            if len(true_non_zero_indices) == 1:
+                if row < self.no_vars:
+                    print str(-vector[row + self.no_vars]) + \
+                        ' <= ' + terms[0] + ' <= ' + str(vector[row])
+            else:
+                if row < no_rows - no_d_constraints: 
+                    print str(-vector[row + no_d_constraints]) + \
+                        ' <= ' + terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
 
 ####################################################################################################
 ##################################### COMMAND LINE ARGUMENTS #######################################
@@ -574,22 +572,22 @@ def command_line_arguments():
     parser = OptionParser(usage=usage)
     parser.add_option("", "--input-file", dest="input_file",
                       help="Specifies the path to the input file.")
-    parser.add_option("", "--dimension", dest="dimension",
+    parser.add_option("", "--dimension", dest="dimension", type='int',
                       help="Specifies the dimension of the function domain.")
-    
+    parser.add_option("", "--generate-input", dest="generate_input", action="store_true",
+                      help="Specifies whether automatic input is generated to test consistency.")
+
     return parser.parse_args()
 
 
 def main():
     (options, args) = command_line_arguments()
 
-    n = int(options.dimension)
-    no_points_per_axis = tuple([x + 3 for x in range(n)])
-    printing.options['width'] = 30
+    if options.generate_input:
+        generate_test_file(options.input_file, options.dimension)
     
-    #generate_test_file(options.input_file, n, no_points_per_axis)
     cons = Consistency(options.input_file)
-    cons.build_LP_problem()
+    cons.solve_LP_problem()
     cons.plot_3D_objects_for_2D_case()
 
 if __name__ == '__main__':
