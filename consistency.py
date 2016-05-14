@@ -80,10 +80,10 @@ def generate_tuples_info(file_descriptor, n, no_points_per_axis, is_function_inf
     traverse_nd_array(nd_array, file_descriptor, n)
 
 
-def generate_test_file(input_file, n):
+def generate_test_file(input_file, n, no_points_per_axis):
     # Initialize the number of points on each axis that will determine the grid.
-    # no_points_per_axis = tuple([x + 10 for x in range(n)])
-    no_points_per_axis = tuple([19] * n)
+    # no_points_per_axis = tuple([x + 4 for x in range(n)])
+    no_points_per_axis = [no_points_per_axis] * n
 
     with open(input_file, 'w+') as f:
         # Dimension.
@@ -356,7 +356,6 @@ class Consistency:
 
             # Since consistency has been established, solve the converse LP problem to get the
             # maximal bounding surface.
-
             max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
             self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
             print np.around(self.max_heights, decimals=2)
@@ -495,9 +494,9 @@ class Consistency:
                 triangles.append([label, label + y_dim, label + 1])
                 triangles.append([label + y_dim, label + y_dim + 1, label + 1])
 
-        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=1.0, antialiased=False, 
+        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=0.5, antialiased=False, 
                         triangles=triangles)
-        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=1.0, antialiased=False, 
+        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=0.5, antialiased=False, 
                         triangles=triangles)
 
         ax.set_xlabel('X axis')
@@ -506,7 +505,6 @@ class Consistency:
 
         plt.xticks(self.grid_info[0])
         plt.yticks(self.grid_info[1])
-
 
         ax.set_zlim(0.95 * min(min_z) , max(max_z) * 1.05)
 
@@ -570,11 +568,14 @@ def command_line_arguments():
     """
 
     parser = OptionParser(usage=usage)
-    parser.add_option("", "--input-file", dest="input_file",
+    parser.add_option("-i", "--input-file", dest="input_file",
                       help="Specifies the path to the input file.")
-    parser.add_option("", "--dimension", dest="dimension", type='int',
+    parser.add_option("-d", "--dimension", dest="dimension", type='int',
                       help="Specifies the dimension of the function domain.")
-    parser.add_option("", "--generate-input", dest="generate_input", action="store_true",
+    parser.add_option("-p", "--no-points-per-axis", dest="no_points_per_axis", type='int',
+                      help="Specifies the number of points along each axis that is used for"
+                           "automatically generating input files.")
+    parser.add_option("-g", "--generate-input", dest="generate_input", action="store_true",
                       help="Specifies whether automatic input is generated to test consistency.")
 
     return parser.parse_args()
@@ -584,7 +585,7 @@ def main():
     (options, args) = command_line_arguments()
 
     if options.generate_input:
-        generate_test_file(options.input_file, options.dimension)
+        generate_test_file(options.input_file, options.dimension, options.no_points_per_axis)
     
     cons = Consistency(options.input_file)
     cons.solve_LP_problem()
