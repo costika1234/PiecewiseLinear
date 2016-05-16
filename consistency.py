@@ -81,7 +81,7 @@ def get_flat_info_from_polynomial(polynomial, grid_info, no_points_per_axis, is_
             flat_info.append(f_interval)
         else:
             d_values = [float(derivative.eval(point)) for derivative in derivatives]
-            d_intervals = tuple([(d_value - 3 * eps, d_value + 3 * eps) for d_value in d_values])
+            d_intervals = tuple([(d_value - 300 * eps, d_value + 300 * eps) for d_value in d_values])
             flat_info.append(d_intervals)
 
     return flat_info
