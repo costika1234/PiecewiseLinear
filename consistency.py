@@ -34,14 +34,13 @@ def get_polynomial_vars(n):
 
 
 def get_coefs_exponents_list(n):
-    if n == 2:
-        return [(1, 2, 0), (1, 1, 1,), (-2, 0, 1)]
-    elif n == 3:
-        return [(1, 3, 0, 1), (2, 0, 2, 2), (-8, 0, 0, 4)]
-    elif n == 4:
-        return [(2, 3, 4, 5, 6), (1, 8, 3, 4, 0), (-5, 0, 1, 0, 1)]
-    else:
-        return []
+    result = []
+    for index in range(20):
+        coef = np.random.randint(-20, 20, 1).tolist()
+        result.append(tuple([coef[0]] + np.random.randint(0, 10, n).tolist()))
+
+    print result
+    return result
 
 
 def build_polynomial(coefs_exponents_list):
@@ -61,9 +60,8 @@ def build_polynomial(coefs_exponents_list):
     return poly(' + '.join(poly_terms), gens=poly_vars)
 
 
-def get_flat_info_from_polynomial(grid_info, no_points_per_axis, is_function_info):
+def get_flat_info_from_polynomial(polynomial, grid_info, no_points_per_axis, is_function_info):
     n = len(grid_info)
-    polynomial = build_polynomial(get_coefs_exponents_list(n))
 
     if not is_function_info:
         poly_vars_str = [str(var) for var in get_polynomial_vars(n)]
@@ -71,7 +69,7 @@ def get_flat_info_from_polynomial(grid_info, no_points_per_axis, is_function_inf
         
     grid_points = generate_indices(no_points_per_axis, False)
     flat_info = []
-    eps = 2.0
+    eps = 10.0
 
     # Generate intervals from the given polynomial. 
     for grid_point in grid_points:
@@ -83,7 +81,7 @@ def get_flat_info_from_polynomial(grid_info, no_points_per_axis, is_function_inf
             flat_info.append(f_interval)
         else:
             d_values = [float(derivative.eval(point)) for derivative in derivatives]
-            d_intervals = tuple([(d_value - eps, d_value + eps) for d_value in d_values])
+            d_intervals = tuple([(d_value - 3 * eps, d_value + 3 * eps) for d_value in d_values])
             flat_info.append(d_intervals)
 
     return flat_info
@@ -125,14 +123,16 @@ def traverse_nd_array(nd_array, f, depth):
 
 
 def generate_tuples_info(file_descriptor, n, no_points_per_axis, grid_info, is_function_info, 
-                         from_poly):
+                         polynomial):
     no_elements = np.prod(no_points_per_axis)
     dt = get_dtype(n, is_function_info)
 
     if is_function_info:
         # Create flat array with pairs (c-, c+).
-        if from_poly:
-            flat_function_info = get_flat_info_from_polynomial(grid_info, no_points_per_axis, 
+        if polynomial:
+            flat_function_info = get_flat_info_from_polynomial(polynomial, 
+                                                               grid_info, 
+                                                               no_points_per_axis, 
                                                                is_function_info) 
         else:
             flat_function_info = get_zipped_list(no_elements)
@@ -140,8 +140,10 @@ def generate_tuples_info(file_descriptor, n, no_points_per_axis, grid_info, is_f
         nd_array = np.array(flat_function_info, dtype=dt).reshape(no_points_per_axis)
     else:
         # Create flat array with tuples ((c1-, c1+), (c2-, c2+), ...).
-        if from_poly:
-            flat_derivative_info = get_flat_info_from_polynomial(grid_info, no_points_per_axis, 
+        if polynomial:
+            flat_derivative_info = get_flat_info_from_polynomial(polynomial, 
+                                                                 grid_info, 
+                                                                 no_points_per_axis, 
                                                                  is_function_info) 
         else:
             zipped = get_zipped_list_2(no_elements)
@@ -158,6 +160,8 @@ def generate_test_file(input_file, n, no_points_per_axis, from_poly):
     # Initialize the number of points on each axis that will determine the grid.
     # no_points_per_axis = tuple([x + 20 for x in range(n)])
     no_points_per_axis = tuple([no_points_per_axis] * n)
+    if from_poly:
+        polynomial = build_polynomial(get_coefs_exponents_list(n))
 
     with open(input_file, 'w+') as f:
         # Dimension.
@@ -179,14 +183,14 @@ def generate_test_file(input_file, n, no_points_per_axis, from_poly):
         f.write('\n# Function information (specified as a %d-dimensional array of intervals, where '
                 'an entry is of the form (c-, c+), c- < c+, and represents the constraint for the '
                 'function value at a particular grid point):\n' % n)
-        generate_tuples_info(f, n, no_points_per_axis, grid_info, True, from_poly)
+        generate_tuples_info(f, n, no_points_per_axis, grid_info, True, polynomial)
 
         # Derivative information.
         f.write('\n# Derivative information (specified as a %d-dimensional array of tuples of '
                 'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), ci- < ci+,'
                 ' and represents the constraints along each partial derivative at a '
                 'particular grid point):\n' % n)
-        generate_tuples_info(f, n, no_points_per_axis, grid_info, False, from_poly)
+        generate_tuples_info(f, n, no_points_per_axis, grid_info, False, polynomial)
 
 ####################################################################################################
 ############################################# PARSING ##############################################
