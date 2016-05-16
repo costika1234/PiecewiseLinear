@@ -4,11 +4,13 @@ from cvxopt import matrix, solvers, sparse, spmatrix
 from mpl_toolkits.mplot3d import Axes3D
 from operator import mul
 from optparse import OptionParser
+from sympy import poly
 
 import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import re
+import sympy as sp
 import sys
 
 
@@ -25,6 +27,67 @@ DIMENSION_REGEX    = r'# Dimension: (\d+)'
 ####################################################################################################
 ######################################### DATA GENERATION ##########################################
 ####################################################################################################
+
+def get_polynomial_vars(n):
+    return sp.symbols(['x_' + str(i + 1)for i in range(n)])
+
+
+def get_coefs_exponents_list(n):
+    if n == 2:
+        return [(1, 2, 0), (1, 1, 1,), (-2, 0, 1)]
+    elif n == 3:
+        return [(1, 3, 0, 1), (2, 0, 2, 2), (-8, 0, 0, 4)]
+    elif n == 4:
+        return [(2, 3, 4, 5, 6), (1, 8, 3, 4, 0), (-5, 0, 1, 0, 1)]
+    else:
+        return []
+
+
+def build_polynomial(coefs_exponents_list):
+    # Construct an 'n'-dimensional polynomial from the given coefficients and exponents list, 
+    # given in the form: [(coef_1, exp_1, exp_2, ..., exp_n), ...].
+    poly_terms = []
+    poly_vars = get_polynomial_vars(len(coefs_exponents_list[0][1:]))
+
+    for coef_exponents in coefs_exponents_list:
+        coef = coef_exponents[0]
+        poly_term = []
+        for index, exponent in enumerate(coef_exponents[1:]):
+            poly_term.append(str(poly_vars[index]) + '**' + str(exponent))
+        
+        poly_terms.append(str(coef) + ' * ' + " * ".join(poly_term))
+
+    return poly(' + '.join(poly_terms), gens=poly_vars)
+
+
+def get_function_and_derivative_info_from_polynomial(grid_info, no_points_per_axis):
+    n = len(grid_info)
+    poly_vars_str = [str(var) for var in get_polynomial_vars(n)]
+
+    polynomial = build_polynomial(get_coefs_exponents_list(n))
+    derivatives = [polynomial.diff(poly_vars_str[i]) for i in range(n)]
+        
+    grid_points = generate_indices(no_points_per_axis, False)
+    function_values_intervals = []
+    derivative_values_intervals = []
+    eps = 2.0
+
+    # Calculate the values for function and derivative at each grid point from which intervals
+    # will be generated from both function values and partial derivatives. 
+    for grid_point in grid_points:
+        point = tuple([grid_info[i][grid_point[i]] for i in range(n)])
+        f_value = float(polynomial.eval(point))
+        d_values =  [float(derivative.eval(point)) for derivative in derivatives]
+
+        function_values_intervals.append((f_value - eps, f_value + eps))
+        derivative_values_intervals.append([(d_value - eps, d_value + eps) for d_value in d_values])
+
+        print point, ":", f_value, d_values
+
+    print "--------------"
+    print function_values_intervals
+    print derivative_values_intervals
+
 
 def get_zipped_list(no_elements):
     # Returns a list of the form: [(a, b), ...] to help generating dummy data.
@@ -61,29 +124,35 @@ def traverse_nd_array(nd_array, f, depth):
     f.write('# End of %d depth \n' % depth)
 
 
-def generate_tuples_info(file_descriptor, n, no_points_per_axis, is_function_info):
+def generate_tuples_info(file_descriptor, n, no_points_per_axis, is_function_info, from_poly):
     no_elements = np.prod(no_points_per_axis)
     dt = get_dtype(n, is_function_info)
 
     if is_function_info:
         # Create flat array with pairs (c-, c+).
-        flat_function_info = get_zipped_list(no_elements)
-        nd_array = np.array(flat_function_info, dtype=dt).reshape(no_points_per_axis)
+        if from_poly:
+            pass
+        else:
+            flat_function_info = get_zipped_list(no_elements)
+            nd_array = np.array(flat_function_info, dtype=dt).reshape(no_points_per_axis)
     else:
         # Create flat array with tuples ((c1-, c1+), (c2-, c2+), ...).
-        zipped = get_zipped_list_2(no_elements)
-        flat_derivative_info = zip(*[zipped for _ in range(n)])
-        nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_points_per_axis)
+        if from_poly:
+            pass
+        else:
+            zipped = get_zipped_list_2(no_elements)
+            flat_derivative_info = zip(*[zipped for _ in range(n)])
+            nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_points_per_axis)
 
-    # Write contents to file.`
+    # Write contents to file.
     file_descriptor.write('# Array shape: {0}\n'.format(nd_array.shape))
     traverse_nd_array(nd_array, file_descriptor, n)
 
 
-def generate_test_file(input_file, n, no_points_per_axis):
+def generate_test_file(input_file, n, no_points_per_axis, from_poly):
     # Initialize the number of points on each axis that will determine the grid.
-    # no_points_per_axis = tuple([x + 4 for x in range(n)])
-    no_points_per_axis = [no_points_per_axis] * n
+    no_points_per_axis = tuple([x + 3 for x in range(n)])
+    # no_points_per_axis = [no_points_per_axis] * n
 
     with open(input_file, 'w+') as f:
         # Dimension.
@@ -101,14 +170,14 @@ def generate_test_file(input_file, n, no_points_per_axis):
         f.write('\n# Function information (specified as a %d-dimensional array of intervals, where '
                 'an entry is of the form (c-, c+), c- < c+, and represents the constraint for the '
                 'function value at a particular grid point):\n' % n)
-        generate_tuples_info(f, n, no_points_per_axis, is_function_info=True)
+        generate_tuples_info(f, n, no_points_per_axis, is_function_info=True, from_poly=False)
 
         # Derivative information.
         f.write('\n# Derivative information (specified as a %d-dimensional array of tuples of '
                 'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), ci- < ci+,'
                 ' and represents the constraints along each partial derivative at a '
                 'particular grid point):\n' % n)
-        generate_tuples_info(f, n, no_points_per_axis, is_function_info=False)
+        generate_tuples_info(f, n, no_points_per_axis, is_function_info=False, from_poly=False)
 
 ####################################################################################################
 ############################################# PARSING ##############################################
@@ -511,6 +580,28 @@ class Consistency:
         plt.show()
 
 
+    def plot_polynomial(self):
+        grid_points = generate_indices(self.no_points_per_axis, False)
+        x, y = np.meshgrid(self.grid_info[0], self.grid_info[1])
+
+        polynomial = build_polynomial([(1, 3, 1), (-1, 0, 3), (2, 2, 0)])
+        
+        z = []
+        for grid_point in grid_points:
+            x_coord = self.grid_info[0][grid_point[0]]
+            y_coord = self.grid_info[1][grid_point[1]]
+            point = (x_coord, y_coord)
+            z.append(float(polynomial.eval(point)))
+
+        z = np.array(z).reshape((self.no_points_per_axis[0], self.no_points_per_axis[1]))
+
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        ax.plot_surface(x, y, z, cmap='Blues', linewidth=0.5, antialiased=False)
+
+        plt.show()        
+
+
     def display_LP_problem(self, coef_matrix, vector):
         grid_indices = generate_indices(self.no_points_per_axis, False)
         no_rows = coef_matrix.size[0]
@@ -584,12 +675,18 @@ def command_line_arguments():
 def main():
     (options, args) = command_line_arguments()
 
+    #x = [(-2, 3, 4, 7, 8), (3, 1, 0, 0, 1), (4, 0, 1, 10, 9), (7, 0, 0, 0, 0)]
+    #print build_polynomial(x)
+
     if options.generate_input:
-        generate_test_file(options.input_file, options.dimension, options.no_points_per_axis)
+        generate_test_file(options.input_file, options.dimension, options.no_points_per_axis, False)
     
     cons = Consistency(options.input_file)
     cons.solve_LP_problem()
-    cons.plot_3D_objects_for_2D_case()
+    # cons.plot_3D_objects_for_2D_case()
+    # cons.plot_polynomial()
+
+    get_function_and_derivative_info_from_polynomial(cons.grid_info, cons.no_points_per_axis)
 
 if __name__ == '__main__':
     main()
