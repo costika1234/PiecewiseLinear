@@ -35,9 +35,9 @@ def get_polynomial_vars(n):
 
 def get_coefs_exponents_list(n):
     result = []
-    for index in range(20):
-        coef = np.random.randint(-20, 20, 1).tolist()
-        result.append(tuple([coef[0]] + np.random.randint(0, 10, n).tolist()))
+    for index in range(10):
+        coef = np.random.randint(-40, 40, 1).tolist()
+        result.append(tuple([coef[0]] + np.random.randint(0, 5, n).tolist()))
 
     print result
     return result
@@ -69,7 +69,7 @@ def get_flat_info_from_polynomial(polynomial, grid_info, no_points_per_axis, is_
         
     grid_points = generate_indices(no_points_per_axis, False)
     flat_info = []
-    eps = 10.0
+    eps = 30.0
 
     # Generate intervals from the given polynomial. 
     for grid_point in grid_points:
@@ -81,7 +81,7 @@ def get_flat_info_from_polynomial(polynomial, grid_info, no_points_per_axis, is_
             flat_info.append(f_interval)
         else:
             d_values = [float(derivative.eval(point)) for derivative in derivatives]
-            d_intervals = tuple([(d_value - 300 * eps, d_value + 300 * eps) for d_value in d_values])
+            d_intervals = tuple([(d_value - 50000.0, d_value + 50000.0) for d_value in d_values])
             flat_info.append(d_intervals)
 
     return flat_info
@@ -160,6 +160,7 @@ def generate_test_file(input_file, n, no_points_per_axis, from_poly):
     # Initialize the number of points on each axis that will determine the grid.
     # no_points_per_axis = tuple([x + 20 for x in range(n)])
     no_points_per_axis = tuple([no_points_per_axis] * n)
+    polynomial = None
     if from_poly:
         polynomial = build_polynomial(get_coefs_exponents_list(n))
 
@@ -191,6 +192,8 @@ def generate_test_file(input_file, n, no_points_per_axis, from_poly):
                 ' and represents the constraints along each partial derivative at a '
                 'particular grid point):\n' % n)
         generate_tuples_info(f, n, no_points_per_axis, grid_info, False, polynomial)
+
+    return polynomial
 
 ####################################################################################################
 ############################################# PARSING ##############################################
@@ -392,7 +395,7 @@ def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, dis
 
 class Consistency:
 
-    def __init__(self, input_file):
+    def __init__(self, input_file, polynomial):
         # Domain dimension (integer).
         self.n = init_dimension(input_file)
 
@@ -416,6 +419,9 @@ class Consistency:
 
         # Number of decision variables (integer).
         self.no_vars = np.prod(self.no_points_per_axis)
+
+        # Polynomial from which data was generated.
+        self.polynomial = polynomial
 
 
     def solve_LP_problem(self):
@@ -562,6 +568,7 @@ class Consistency:
         max_z = self.max_heights.flatten()
 
         fig = plt.figure()
+        fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
         # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in 
         # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
@@ -590,29 +597,21 @@ class Consistency:
 
         ax.set_zlim(0.95 * min(min_z) , max(max_z) * 1.05)
 
+        self.plot_polynomial(ax)
+
         plt.show()
 
 
-    def plot_polynomial(self):
-        grid_points = generate_indices(self.no_points_per_axis, False)
-        x, y = np.meshgrid(self.grid_info[0], self.grid_info[1])
+    def plot_polynomial(self, ax):
+        x = self.grid_info[0]
+        y = self.grid_info[1]
+        x = y = np.arange(0.0, 1.0, 0.01)
+        X, Y = np.meshgrid(x, y)
 
-        polynomial = build_polynomial([(1, 3, 1), (-1, 0, 3), (2, 2, 0)])
+        zs = np.array([float(self.polynomial.eval((x, y))) for x,y in zip(np.ravel(X), np.ravel(Y))])
+        Z = zs.reshape(X.shape)
         
-        z = []
-        for grid_point in grid_points:
-            x_coord = self.grid_info[0][grid_point[0]]
-            y_coord = self.grid_info[1][grid_point[1]]
-            point = (x_coord, y_coord)
-            z.append(float(polynomial.eval(point)))
-
-        z = np.array(z).reshape((self.no_points_per_axis[0], self.no_points_per_axis[1]))
-
-        fig = plt.figure()
-        ax = fig.gca(projection='3d')
-        ax.plot_surface(x, y, z, cmap='Blues', linewidth=0.5, antialiased=False)
-
-        plt.show()        
+        ax.plot_surface(X, Y, Z, cmap='Greens', linewidth=0.5, antialiased=False, alpha=1.0)     
 
 
     def display_LP_problem(self, coef_matrix, vector):
@@ -689,14 +688,18 @@ def command_line_arguments():
 
 def main():
     (options, args) = command_line_arguments()
+    polynomial = None
 
     if options.generate_input:
-        generate_test_file(options.input_file, options.dimension, options.no_points_per_axis, 
-                           options.from_poly)
+        polynomial = generate_test_file(options.input_file, 
+                                        options.dimension, 
+                                        options.no_points_per_axis, 
+                                        options.from_poly)
     
-    cons = Consistency(options.input_file)
+    cons = Consistency(options.input_file, polynomial)
     cons.solve_LP_problem()
     cons.plot_3D_objects_for_2D_case()
+
 
 if __name__ == '__main__':
     main()
