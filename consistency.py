@@ -5,6 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from operator import mul
 from optparse import OptionParser
 from sympy import poly
+from input_generator import InputGenerator
 
 import itertools
 import matplotlib.pyplot as plt
@@ -18,10 +19,10 @@ LOWER_BOUND = 'lower_bound'
 UPPER_BOUND = 'upper_bound'
 
 GRID_INFO_STRING       = r'# Grid information'
+POLYNOMIAL_INFO_STRING = r'# Polynomial information'
 FUNCTION_INFO_STRING   = r'# Function information'
 DERIVATIVE_INFO_STRING = r'# Derivative information'
 
-#FLOAT_NUMBER_REGEX = r'[-+]?[0-9]*\.?[0-9]+'
 FLOAT_NUMBER_REGEX = r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
 DIMENSION_REGEX    = r'# Dimension: (\d+)'
 
@@ -29,60 +30,61 @@ DIMENSION_REGEX    = r'# Dimension: (\d+)'
 ######################################### DATA GENERATION ##########################################
 ####################################################################################################
 
-def get_polynomial_vars(n):
-    return sp.symbols(['x_' + str(i + 1)for i in range(n)])
-
-
-def get_coefs_exponents_list(n):
-    result = []
-    for index in range(10):
-        coef = np.random.randint(-40, 40, 1).tolist()
-        result.append(tuple([coef[0]] + np.random.randint(0, 5, n).tolist()))
-
-    print result
-    return result
-
-
-def build_polynomial(coefs_exponents_list):
-    # Construct an 'n'-dimensional polynomial from the given coefficients and exponents list, 
-    # given in the form: [(coef_1, exp_1, exp_2, ..., exp_n), ...].
-    poly_terms = []
-    poly_vars = get_polynomial_vars(len(coefs_exponents_list[0][1:]))
-
-    for coef_exponents in coefs_exponents_list:
-        coef = coef_exponents[0]
-        poly_term = []
-        for index, exponent in enumerate(coef_exponents[1:]):
-            poly_term.append(str(poly_vars[index]) + '**' + str(exponent))
-        
-        poly_terms.append(str(coef) + ' * ' + " * ".join(poly_term))
-
-    return poly(' + '.join(poly_terms), gens=poly_vars)
-
 
 def get_flat_info_from_polynomial(polynomial, grid_info, no_points_per_axis, is_function_info):
     n = len(grid_info)
-
-    if not is_function_info:
-        poly_vars_str = [str(var) for var in get_polynomial_vars(n)]
-        derivatives = [polynomial.diff(poly_vars_str[i]) for i in range(n)]
         
     grid_points = generate_indices(no_points_per_axis, False)
     flat_info = []
-    eps = 30.0
+    eps = 20.0
 
-    # Generate intervals from the given polynomial. 
+    # Generate intervals from the given polynomial.
     for grid_point in grid_points:
         point = tuple([grid_info[i][grid_point[i]] for i in range(n)])
         
+        # print point
+
         if is_function_info:
             f_value = float(polynomial.eval(point))
+            # Default interval (in case there are no neighbours).
             f_interval = (f_value - eps, f_value + eps)
+            if not is_border_index(grid_point, no_points_per_axis):
+                neighbours = generate_grid_indices_neighbours(grid_point, n)
+                min_height = float('inf')
+                max_height = float('-inf')
+
+                for neighbour in neighbours:
+                    neighbour_point = tuple([grid_info[i][neighbour[i]] for i in range(n)])
+                    min_height = min(min_height, polynomial.eval(neighbour_point))
+                    max_height = max(max_height, polynomial.eval(neighbour_point))
+
+                distance = (max_height - min_height) / 2 + eps
+                f_interval = (f_value - 0.5 * distance, f_value + distance)
+
             flat_info.append(f_interval)
+
+            # print '------------'
+
         else:
-            d_values = [float(derivative.eval(point)) for derivative in derivatives]
-            d_intervals = tuple([(d_value - 50000.0, d_value + 50000.0) for d_value in d_values])
+            d_values = [0.0] * n
+
+            for ith_partial_derivative in range(n):
+                next_grid_point = get_neighbour_for_grid_index(grid_point, ith_partial_derivative)
+                if next_grid_point[ith_partial_derivative] < no_points_per_axis[ith_partial_derivative]:
+                    next_point = tuple([grid_info[i][next_grid_point[i]] for i in range(n)])
+                    f_value = float(polynomial.eval(point))
+                    f_value_next = float(polynomial.eval(next_point))
+                    
+                    d_values[ith_partial_derivative] = \
+                        (f_value_next - f_value) / \
+                        (next_point[ith_partial_derivative] - point[ith_partial_derivative])
+                    
+            d_intervals = tuple([(d_value -  eps, d_value + 3 * eps) for d_value in d_values])
+
             flat_info.append(d_intervals)
+
+    #import sys
+    #sys.exit()
 
     return flat_info
 
@@ -158,7 +160,7 @@ def generate_tuples_info(file_descriptor, n, no_points_per_axis, grid_info, is_f
 
 def generate_test_file(input_file, n, no_points_per_axis, from_poly):
     # Initialize the number of points on each axis that will determine the grid.
-    # no_points_per_axis = tuple([x + 20 for x in range(n)])
+    # no_points_per_axis = tuple([x + 3 for x in range(n)])
     no_points_per_axis = tuple([no_points_per_axis] * n)
     polynomial = None
     if from_poly:
@@ -242,8 +244,8 @@ def init_derivative_info(input_file, dimension, no_points_per_axis):
 
 
 def build_tuples_regex_for_dimension(d):
-    return r"\((?P<" + LOWER_BOUND + r"_" + str(d) + r">" + FLOAT_NUMBER_REGEX + r"),\s*" + \
-             r"(?P<" + UPPER_BOUND + r"_" + str(d) + r">" + FLOAT_NUMBER_REGEX + r")\)" 
+    return r'\((?P<' + LOWER_BOUND + r'_' + str(d) + r'>' + FLOAT_NUMBER_REGEX + r'),\s*' + \
+             r'(?P<' + UPPER_BOUND + r'_' + str(d) + r'>' + FLOAT_NUMBER_REGEX + r')\)' 
 
 
 def build_tuples_regex(n, is_function_info):
@@ -252,15 +254,15 @@ def build_tuples_regex(n, is_function_info):
     if is_function_info:
         return build_tuples_regex_for_dimension(1)
 
-    return r"\(" + r",\s*".join([build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r"\)"
+    return r'\(' + r',\s*'.join([build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r'\)'
 
 
 def build_tuple_match(n, match, is_function_info):
     if is_function_info:
-        return tuple([match.group(LOWER_BOUND + "_1"), match.group(UPPER_BOUND + "_1")])
+        return tuple([match.group(LOWER_BOUND + '_1'), match.group(UPPER_BOUND + '_1')])
 
-    return tuple([(match.group(LOWER_BOUND + "_%d" % (d + 1)), \
-                   match.group(UPPER_BOUND + "_%d" % (d + 1))) for d in range(n)])
+    return tuple([(match.group(LOWER_BOUND + '_%d' % (d + 1)), \
+                   match.group(UPPER_BOUND + '_%d' % (d + 1))) for d in range(n)])
 
 
 def parse_tuples_info(lines, dimension, no_points_per_axis, is_function_info):
@@ -283,6 +285,20 @@ def parse_tuples_info(lines, dimension, no_points_per_axis, is_function_info):
 ####################################################################################################
 ################################## LINEAR PROGRAMMING ALGORITHM ####################################
 ####################################################################################################
+
+def get_neighbour_for_grid_index(index, axis):
+    result = list(index)
+    result[axis] = result[axis] + 1
+    return tuple(result)
+
+
+def is_border_index(index, no_points_per_axis):
+    for i in range(len(no_points_per_axis)):
+        if index[i] == no_points_per_axis[i] - 1:
+            return True
+
+    return False
+
 
 def generate_indices(no_points_per_axis, ignore_last_point_on_each_axis):
     offset = 0
@@ -322,7 +338,7 @@ def generate_indices_without_neighbours(no_points_per_axis):
 def generate_grid_indices_neighbours(point, n):
     # Given a 'point' in the grid (in terms of indices), determine all its neighbours, along each
     # dimension.
-    assert len(point) == n, "Point is not %d dimensional" % n
+    assert len(point) == n, 'Point is not %d dimensional' % n
 
     tuple_sum_lambda = lambda x, y: tuple(map(sum, zip(x, y)))
     all_binary_perms = list(itertools.product([0, 1], repeat=n))
@@ -395,9 +411,9 @@ def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, dis
 
 class Consistency:
 
-    def __init__(self, input_file, polynomial):
+    def __init__(self, dimension, input_file):
         # Domain dimension (integer).
-        self.n = init_dimension(input_file)
+        self.n = dimension
 
         # Grid information (numpy array).
         self.grid_info = init_grid_info(input_file, self.n)
@@ -420,8 +436,8 @@ class Consistency:
         # Number of decision variables (integer).
         self.no_vars = np.prod(self.no_points_per_axis)
 
-        # Polynomial from which data was generated.
-        self.polynomial = polynomial
+        # Randomly generated heights to enable automatic testing (n-dim numpy array).
+        self.random_heights = np.zeros(self.no_points_per_axis)
 
 
     def solve_LP_problem(self):
@@ -449,7 +465,7 @@ class Consistency:
             print np.around(self.max_heights, decimals=2)
 
         else:
-            print "No witness for consistency found."
+            print 'No witness for consistency found.'
 
 
     def build_constraints_from_function_info(self):
@@ -475,6 +491,9 @@ class Consistency:
 
                 l_b_constraints[index] = max(l_b_constraints[index], l_b_function_value)
                 u_b_constraints[index] = min(u_b_constraints[index], u_b_function_value)
+
+            # l_b_constraints[index] = self.function_info[index][0]
+            # u_b_constraints[index] = self.function_info[index][1]
 
         # For the border indices (without any further neighbours in any direction), use the function
         # information as the bounds for the heights.
@@ -557,7 +576,7 @@ class Consistency:
 
     def plot_3D_objects_for_2D_case(self):
         if self.n != 2:
-            print "Plotting is only available for 2D domain."
+            print 'Plotting is only available for 2D domain.'
             return
 
         grid_points = generate_indices(self.no_points_per_axis, False)
@@ -595,9 +614,13 @@ class Consistency:
         plt.xticks(self.grid_info[0])
         plt.yticks(self.grid_info[1])
 
-        ax.set_zlim(0.95 * min(min_z) , max(max_z) * 1.05)
+        ax.set_zlim(min(min_z) - 1.0, max(max_z) + 1.0)
 
-        self.plot_polynomial(ax)
+
+        ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5, antialiased=False, 
+                        triangles=triangles)
+
+        #self.plot_polynomial(ax)
 
         plt.show()
 
@@ -605,7 +628,7 @@ class Consistency:
     def plot_polynomial(self, ax):
         x = self.grid_info[0]
         y = self.grid_info[1]
-        x = y = np.arange(0.0, 1.0, 0.01)
+        #x = y = np.arange(0.0, 1.0, 0.01)
         X, Y = np.meshgrid(x, y)
 
         zs = np.array([float(self.polynomial.eval((x, y))) for x,y in zip(np.ravel(X), np.ravel(Y))])
@@ -620,7 +643,7 @@ class Consistency:
         no_cols = coef_matrix.size[1]
         no_d_constraints = (no_rows - 2 * self.no_vars) / 2
 
-        print "LP problem:"
+        print 'LP problem:'
 
         for row in range(no_rows):
             non_zeros_indices = [(row + col * no_rows) for col in range(no_cols) \
@@ -653,7 +676,7 @@ class Consistency:
 ####################################################################################################
 
 def command_line_arguments():
-    usage = """
+    usage = '''
 
     consistency.py:
 
@@ -668,37 +691,47 @@ def command_line_arguments():
 
         python consistency.py --input_file <path_to_file>
     
-    """
+    '''
 
     parser = OptionParser(usage=usage)
-    parser.add_option("-i", "--input-file", dest="input_file",
-                      help="Specifies the path to the input file.")
-    parser.add_option("-d", "--dimension", dest="dimension", type='int',    
-                      help="Specifies the dimension of the function domain.")
-    parser.add_option("-p", "--no-points-per-axis", dest="no_points_per_axis", type='int',
-                      help="Specifies the number of points along each axis that is used for"
-                           "automatically generating input files.")
-    parser.add_option("-g", "--generate-input", dest="generate_input", action="store_true",
-                      help="Specifies whether automatic input is generated to test consistency.")
-    parser.add_option("-P", "--from-poly", dest="from_poly", action="store_true",
-                      help="Specifies whether automatic input is generated from a polynomial.")
+    parser.add_option('-i', '--input-file', dest='input_file', type='string',
+                      help='Specifies the path to the input file.')
+    parser.add_option('-d', '--dimension', dest='dimension', type='int',    
+                      help='Specifies the dimension of the function domain.')
+    parser.add_option('-p', '--no-points-per-axis', dest='no_points_per_axis', type='string', 
+                      help='Specifies the number of points along each axis, as a string of'
+                           'space-separated values. The number of points on each dimension will'
+                           'divide each axis in equal segments and thus create the required grid.')
+    parser.add_option('-g', '--generate-input', dest='generate_input', action='store_true',
+                      help='Specifies whether automatic input is generated to test consistency.')
+    parser.add_option('', '--from-poly', dest='from_poly', action='store_true',
+                      help='Specifies whether automatic input is generated from a polynomial.')
 
-    return parser.parse_args()
+    parser_result = parser.parse_args()
+
+    if len(parser_result[0].no_points_per_axis.split(' ')) != parser_result[0].dimension:
+        raise RuntimeError('Invalid number of points per axis.')
+
+    return parser_result
 
 
 def main():
     (options, args) = command_line_arguments()
-    polynomial = None
 
-    if options.generate_input:
-        polynomial = generate_test_file(options.input_file, 
-                                        options.dimension, 
-                                        options.no_points_per_axis, 
-                                        options.from_poly)
-    
-    cons = Consistency(options.input_file, polynomial)
-    cons.solve_LP_problem()
-    cons.plot_3D_objects_for_2D_case()
+    if options.generate_input: 
+        input_gen = InputGenerator(options.input_file,
+                                   options.dimension,
+                                   options.no_points_per_axis,
+                                   options.from_poly)
+        input_gen.generate_test_file()
+
+    # cons = Consistency(options.input_file, options.dimension)
+
+    # cons = Consistency(options.input_file)
+    # cons.init_random_heights()
+
+    # cons.solve_LP_problem()
+    # cons.plot_3D_objects_for_2D_case()
 
 
 if __name__ == '__main__':
