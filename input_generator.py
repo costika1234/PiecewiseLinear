@@ -1,31 +1,23 @@
 #/usr/local/bin/python
- 
-from cvxopt import matrix, solvers, sparse, spmatrix
-from mpl_toolkits.mplot3d import Axes3D
-from operator import mul
-from optparse import OptionParser
+
 from sympy import poly
 from utils import Utils
 from parser import Parser
 
-import itertools
-import matplotlib.pyplot as plt
 import numpy as np
-import re
 import sympy as sp
-import sys
 
 POLY_TERMS = 10
 POLY_DEGREE = 10
 POLY_MIN_COEF = -40
 POLY_MAX_COEF = 40
 
-RANDOM_LOWER_BOUND = 0
-RANDOM_UPPER_BOUND = 40
+RANDOM_LOWER_BOUND = 10
+RANDOM_UPPER_BOUND = 20
 
 class InputGenerator:
     
-    def __init__(self, input_file, n, no_points_per_axis, from_poly=False, eps=10.0):
+    def __init__(self, input_file, n, no_points_per_axis, from_poly=False, eps=20.0):
         self.input_file = input_file
         self.n = n
         self.no_points_per_axis = [int(i) for i in no_points_per_axis.split(' ')]
@@ -106,10 +98,12 @@ class InputGenerator:
                         f_value_neighbour = self.random_heights[grid_index_neighbour]
                         min_h, max_h = min(min_h, f_value_neighbour), max(max_h, f_value_neighbour)
 
-                    offset = max_h - min_h + self.eps
-                    f_interval = (f_value - offset, f_value + offset)
+                    f_interval = (min_h - self.eps, max_h + self.eps)
                 else:
-                    f_interval = (f_value - self.eps, f_value + self.eps)
+                    # For border points (i.e. those who have at least one coordinate on the
+                    # rightmost endpoint of each axis), initialize a default interval, as the values
+                    # will never be used.
+                    f_interval = (0.0, 0.0)
 
                 flat_info.append(f_interval)
 
@@ -151,9 +145,9 @@ class InputGenerator:
             f.write('# Dimension: %d\n\n' % self.n)
 
             # Grid points (equally spaced on each of the 'n' axis of the domain).
-            f.write('# Grid information (each of the %d lines specify divisions on the domain axis, in '
-                    'strictly increasing order. The endpoints will therefore specify the constraints '
-                    'for the function domain):\n' % self.n)
+            f.write('# Grid information (each of the %d lines specify divisions on the domain axis,'
+                    ' in strictly increasing order. The endpoints will therefore specify the '
+                    'constraints for the function domain):\n' % self.n)
             for no_points in self.no_points_per_axis:
                 np.savetxt(f, np.linspace(0.0, 1.0, no_points), newline=' ', fmt='%s')
                 f.write('\n')
@@ -164,15 +158,15 @@ class InputGenerator:
 
         with open(self.input_file, 'a+') as f:
             # Function information.
-            f.write('\n# Function information (specified as a %d-dimensional array of intervals, where '
-                    'an entry is of the form (c-, c+), c- <= c+, and represents the constraint for the '
-                    'function value at a particular grid point):\n' % self.n)
+            f.write('\n# Function information (specified as a %d-dimensional array of intervals, '
+                    'where an entry is of the form (c-, c+), c- <= c+, and represents the '
+                    'constraint for the function value at a particular grid point):\n' % self.n)
             self.generate_tuples_info(f, is_function_info=True)
 
             # Derivative information.
             f.write('\n# Derivative information (specified as a %d-dimensional array of tuples of '
-                    'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), ci- <= ci+,'
-                    ' and represents the constraints along each partial derivative at a '
+                    'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), '
+                    'ci- <= ci+, and represents the constraints along each partial derivative at a '
                     'particular grid point):\n' % self.n)
             self.generate_tuples_info(f, is_function_info=False)
 

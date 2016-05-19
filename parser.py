@@ -78,7 +78,8 @@ class Parser:
         if is_function_info:
             return Parser.build_tuples_regex_for_dimension(1)
 
-        return r'\(' + r',\s*'.join([Parser.build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r'\)'
+        return r'\(' + r',\s*'.join([Parser.build_tuples_regex_for_dimension(d + 1) 
+                                     for d in range(n)]) + r'\)'
 
 
     @staticmethod

@@ -2,9 +2,7 @@
  
 from cvxopt import matrix, solvers, sparse, spmatrix
 from mpl_toolkits.mplot3d import Axes3D
-from operator import mul
 from optparse import OptionParser
-from sympy import poly
 from input_generator import InputGenerator
 from parser import Parser
 from utils import Utils
@@ -15,114 +13,6 @@ import numpy as np
 import re
 import sympy as sp
 import sys
-
-
-####################################################################################################
-################################## LINEAR PROGRAMMING ALGORITHM ####################################
-####################################################################################################
-
-def get_neighbour_for_grid_index(index, axis):
-    result = list(index)
-    result[axis] = result[axis] + 1
-    return tuple(result)
-
-
-def is_border_index(index, no_points_per_axis):
-    for i in range(len(no_points_per_axis)):
-        if index[i] == no_points_per_axis[i] - 1:
-            return True
-
-    return False
-
-
-def generate_indices(no_points_per_axis, ignore_last_point_on_each_axis):
-    offset = 0
-    if ignore_last_point_on_each_axis:
-        offset = -1
-
-    return list(itertools.product(*[range(no_points + offset) for no_points in no_points_per_axis]))
-
-
-def generate_indices_ignoring_last_coordinate_on_axis(no_points_per_axis, axis):
-    args = []
-    for index, no_points in enumerate(no_points_per_axis):
-        if index == axis:
-            args.append(range(no_points - 1))
-        else:
-            args.append(range(no_points))
-
-    return list(itertools.product(*args))
-
-
-def get_shape_ignoring_last_point_on_axis(no_points_per_axis, axis):
-    # Need to create a copy so that we do not overwrite values passed by reference.
-    result = list(no_points_per_axis)
-    result[axis] = result[axis] - 1
-    return result
-
-
-def calculate_block_heights(no_points_per_axis):
-    dimensions_prod = reduce(mul, no_points_per_axis)
-    return [dimensions_prod / no_points_per_axis[i] * (no_points_per_axis[i] - 1) \
-            for i in range(len(no_points_per_axis))]
-
-
-def calculate_number_of_sub_blocks(ith_partial_derivative, no_points_per_axis):
-    if ith_partial_derivative == 0:
-        return 1
-
-    return reduce(mul, no_points_per_axis[:ith_partial_derivative])
-
-
-def calculate_distance_between_non_zero_entries(ith_partial_derivative, no_points_per_axis):
-    if ith_partial_derivative == len(no_points_per_axis) - 1:
-        return 1
-
-    return reduce(mul, no_points_per_axis[(ith_partial_derivative + 1):])
-
-
-def calculate_adjacent_sub_block_offsets(width, no_points_per_axis):
-    block_heights = calculate_block_heights(no_points_per_axis)
-
-    result = []
-    for index, no_points in enumerate(no_points_per_axis):
-        no_sub_blocks = calculate_number_of_sub_blocks(index, no_points_per_axis)
-        if no_sub_blocks == 1:
-            result += [0]
-        else:
-            sub_block_width = width / no_sub_blocks
-            sub_block_height = block_heights[index] / no_sub_blocks
-            result += [sub_block_width - sub_block_height]
-
-    return result
-
-
-def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, distance):
-    # 'block_height' specifies the height of the current block matrix.
-    # 'no_sub_blocks' specifies the number of subblocks in the current block matrix.
-    # 'distance' specifies the distance between the -1 and 1 entries for this block matrix.
-    # TODO: Refactor this method heavily!
-
-    minus_ones_and_ones = [-1] * block_height + [1] * block_height
-    row_range = range(block_height) * 2
-
-    if no_sub_blocks == 1:
-        column_range_minus_ones = range(block_height)
-    else:
-        column_range_minus_ones = []
-
-        n = 0
-        for index in range(block_height):
-            if index % (block_height / no_sub_blocks) == 0 and index != 0:
-                n = n + offset
-        
-            column_range_minus_ones += [n]
-            n = n + 1
-
-    column_range = column_range_minus_ones + [x + distance for x in column_range_minus_ones]
-
-    return spmatrix(minus_ones_and_ones, row_range, column_range)
-
 
 class Consistency:
 
@@ -199,7 +89,7 @@ class Consistency:
 
         # For all the grid points that can have a neighbour, optimise the lower and upper bound
         # constraints.
-        indices_allowing_neighbours = generate_indices(self.no_points_per_axis, True)
+        indices_allowing_neighbours = Utils.get_grid_indices(self.no_points_per_axis, True)
 
         for grid_index in indices_allowing_neighbours:
             next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
@@ -231,22 +121,21 @@ class Consistency:
 
 
     def build_constraints_from_derivative_info(self):
-        coords_ignoring_last_point \
-            = [generate_indices_ignoring_last_coordinate_on_axis(self.no_points_per_axis, i) \
+        grid_indices_excluding_last_point \
+            = [Utils.get_grid_indices_excluding_last_point_on_axis(self.no_points_per_axis, i) \
                for i in range(self.n)]
 
         # Number of elements for each of the upper/lower bound column vectors.
-        no_elems_b_vec = sum([len(x) for x in coords_ignoring_last_point]) 
+        no_elems_b_vec = sum([len(x) for x in grid_indices_excluding_last_point]) 
         
         l_b_constraints = np.empty(no_elems_b_vec)
         u_b_constraints = np.empty(no_elems_b_vec)
 
         index = 0
        
-        for ith_partial, coords in enumerate(coords_ignoring_last_point):
+        for ith_partial, coords in enumerate(grid_indices_excluding_last_point):
             for coord in coords:
-                next_index = coord[ith_partial] + 1
-                current_index = coord[ith_partial]
+                next_index, current_index = coord[ith_partial] + 1, coord[ith_partial]
                 grid_diff = self.grid_info[ith_partial][next_index] - \
                             self.grid_info[ith_partial][current_index]
                 l_b_constraints[index] = grid_diff * self.derivative_info[coord][ith_partial][0]
@@ -257,16 +146,17 @@ class Consistency:
 
 
     def build_derivative_coef_matrix_and_column_vector(self):
-        block_heights = calculate_block_heights(self.no_points_per_axis)
-        adjacent_offsets = calculate_adjacent_sub_block_offsets(self.no_vars, 
+        block_heights = Utils.calculate_block_heights(self.no_points_per_axis)
+        adjacent_offsets = Utils.calculate_adjacent_sub_block_offsets(self.no_vars, 
                                                                 self.no_points_per_axis)
         matrices_list = []
 
         for index, block_height in enumerate(block_heights):
-            distance = calculate_distance_between_non_zero_entries(index, self.no_points_per_axis)
-            no_sub_blocks = calculate_number_of_sub_blocks(index, self.no_points_per_axis)
-            matrices_list.append(build_matrix_for_partial_derivative(adjacent_offsets[index],
-                                 block_height, no_sub_blocks, distance))
+            distance = Utils.calculate_distance_between_non_zero_entries(
+                index, self.no_points_per_axis)
+            no_sub_blocks = Utils.calculate_number_of_sub_blocks(index, self.no_points_per_axis)
+            matrices_list.append(Utils.build_matrix_for_partial_derivative(
+                adjacent_offsets[index], block_height, no_sub_blocks, distance))
 
         upper_half_matrix = sparse(matrices_list)
         coef_matrix = sparse([upper_half_matrix, -upper_half_matrix])
@@ -286,7 +176,7 @@ class Consistency:
             print 'Plotting is only available for 2D domain.'
             return
 
-        grid_points = generate_indices(self.no_points_per_axis, False)
+        grid_points = Utils.get_grid_indices(self.no_points_per_axis, False)
         x, y = [list(tup) for tup in zip(*grid_points)]
         x = [self.grid_info[0][index] for index in x]
         y = [self.grid_info[1][index] for index in y]
@@ -331,7 +221,7 @@ class Consistency:
 
 
     def display_LP_problem(self, coef_matrix, vector):
-        grid_indices = generate_indices(self.no_points_per_axis, False)
+        grid_indices = Utils.get_grid_indices(self.no_points_per_axis, False)
         no_rows = coef_matrix.size[0]
         no_cols = coef_matrix.size[1]
         no_d_constraints = (no_rows - 2 * self.no_vars) / 2
@@ -382,8 +272,21 @@ def command_line_arguments():
 
     Usage:
 
-        python consistency.py --input_file <path_to_file>
-    
+        * Manual mode for checking consistency based on input file.
+
+            python consistency.py --input_file <path_to_file>
+
+        * Automatic mode which generates consistent pairs (f, g) randomly and then runs the
+          algorithm to check that consistency holds. One can specify the optional '--from-poly'
+          flag to indicate that the function value is obtained from a piece-wise linear polynomial.
+
+            python consistency.py --input_file <path_to_file>
+                                  --generate-input
+                                  --dimension <domain_dimension>
+                                  --no-points-per-axis <no_points_per_axis> (e.g. '2 3 4')
+                                  --epsilon <epsilon>
+                                  [--from-poly]
+
     '''
 
     parser = OptionParser(usage=usage)
@@ -399,33 +302,45 @@ def command_line_arguments():
                       help='Specifies whether automatic input is generated to test consistency.')
     parser.add_option('', '--from-poly', dest='from_poly', action='store_true',
                       help='Specifies whether automatic input is generated from a polynomial.')
+    parser.add_option('-e', '--epsilon', dest='epsilon', type='float',
+                      help='Specifies the tolerance value for generating random intervals for '
+                            'function and derivative information, respectively. When set to 0, '
+                            'both the least, greatest and original function information will '
+                            'coincide.')
 
-    parser_result = parser.parse_args()
+    return parser.parse_args()
 
-    if parser_result[0].no_points_per_axis is not None:
-        if len(parser_result[0].no_points_per_axis.split(' ')) != parser_result[0].dimension:
+
+def validate_options(options):
+    if options.generate_input:
+        if options.dimension is None or \
+           options.no_points_per_axis is None or \
+           options.epsilon is None:
+            raise RuntimeError('Dimension, number of points per axis and epsilon must be specified '
+                               'when generating automatic input.')
+
+        if options.dimension < 2:
+            raise RuntimeError('Invalid domain dimension. Should be greater than or equal to 2.')
+
+        if len(options.no_points_per_axis.split(' ')) != options.dimension:
             raise RuntimeError('Invalid number of points per axis.')
-
-    return parser_result
 
 
 def main():
     (options, args) = command_line_arguments()
+    validate_options(options)
     random_heights = None
 
     if options.generate_input: 
         input_gen = InputGenerator(options.input_file,
                                    options.dimension,
                                    options.no_points_per_axis,
-                                   options.from_poly)
+                                   options.from_poly,
+                                   options.epsilon)
         input_gen.generate_test_file()
         random_heights = input_gen.random_heights
 
     cons = Consistency(options.input_file, random_heights)
- 
-    print "RANDOM HEIGHTS:\n"
-    print random_heights
-
     cons.solve_LP_problem()
     cons.plot_3D_objects_for_2D_case()
 
