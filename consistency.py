@@ -7,6 +7,7 @@ from optparse import OptionParser
 from sympy import poly
 from input_generator import InputGenerator
 from parser import Parser
+from utils import Utils
 
 import itertools
 import matplotlib.pyplot as plt
@@ -58,26 +59,6 @@ def get_shape_ignoring_last_point_on_axis(no_points_per_axis, axis):
     result = list(no_points_per_axis)
     result[axis] = result[axis] - 1
     return result
-
-
-def generate_indices_without_neighbours(no_points_per_axis):
-    # TODO: optimise this method by generating the required tuples instead of resorting to
-    #       difference of sets.
-    indices = generate_indices(no_points_per_axis, False)
-    indices_allowing_neighbours = generate_indices(no_points_per_axis, True)
-
-    return set(indices) - set(indices_allowing_neighbours) 
-
-
-def generate_grid_indices_neighbours(point, n):
-    # Given a 'point' in the grid (in terms of indices), determine all its neighbours, along each
-    # dimension.
-    assert len(point) == n, 'Point is not %d dimensional' % n
-
-    tuple_sum_lambda = lambda x, y: tuple(map(sum, zip(x, y)))
-    all_binary_perms = list(itertools.product([0, 1], repeat=n))
-
-    return [tuple_sum_lambda(point, perm) for perm in all_binary_perms]
 
 
 def calculate_block_heights(no_points_per_axis):
@@ -213,35 +194,23 @@ class Consistency:
         l_b_constraints = np.empty(self.no_points_per_axis)
         u_b_constraints = np.empty(self.no_points_per_axis)
         
-        l_b_constraints.fill(np.float64('-inf'))
-        u_b_constraints.fill(np.float64('inf'))
+        l_b_constraints.fill(np.float('-inf'))
+        u_b_constraints.fill(np.float('inf'))
 
         # For all the grid points that can have a neighbour, optimise the lower and upper bound
         # constraints.
         indices_allowing_neighbours = generate_indices(self.no_points_per_axis, True)
-        
-        for index in indices_allowing_neighbours:
-            neighbour_indices = generate_grid_indices_neighbours(index, self.n)
 
-            for neighbour_index in neighbour_indices:
-                l_b_function_value = self.function_info[neighbour_index][0]
-                u_b_function_value = self.function_info[neighbour_index][1]
+        for grid_index in indices_allowing_neighbours:
+            next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
+            l_b_function_value = self.function_info[grid_index][0]
+            u_b_function_value = self.function_info[grid_index][1]
 
+            for index in next_grid_indices:
                 l_b_constraints[index] = max(l_b_constraints[index], l_b_function_value)
                 u_b_constraints[index] = min(u_b_constraints[index], u_b_function_value)
 
-            # l_b_constraints[index] = self.function_info[index][0]
-            # u_b_constraints[index] = self.function_info[index][1]
-
-        # For the border indices (without any further neighbours in any direction), use the function
-        # information as the bounds for the heights.
-        indices_without_neighbours = generate_indices_without_neighbours(self.no_points_per_axis)
-
-        for index in indices_without_neighbours:
-            l_b_constraints[index] = self.function_info[index][0]
-            u_b_constraints[index] = self.function_info[index][1]
-
-        return (l_b_constraints, u_b_constraints) 
+        return (l_b_constraints, u_b_constraints)
 
 
     def build_function_coef_matrix_and_column_vector(self):
@@ -354,25 +323,11 @@ class Consistency:
 
         ax.set_zlim(min(min_z) - 1.0, max(max_z) + 1.0)
 
-
-        ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5, antialiased=False, 
-                        triangles=triangles)
-
-        #self.plot_polynomial(ax)
+        if self.random_heights is not None:
+            ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5, 
+                            antialiased=False, triangles=triangles)
 
         plt.show()
-
-
-    def plot_polynomial(self, ax):
-        x = self.grid_info[0]
-        y = self.grid_info[1]
-        #x = y = np.arange(0.0, 1.0, 0.01)
-        X, Y = np.meshgrid(x, y)
-
-        zs = np.array([float(self.polynomial.eval((x, y))) for x,y in zip(np.ravel(X), np.ravel(Y))])
-        Z = zs.reshape(X.shape)
-        
-        ax.plot_surface(X, Y, Z, cmap='Greens', linewidth=0.5, antialiased=False, alpha=1.0)     
 
 
     def display_LP_problem(self, coef_matrix, vector):
@@ -447,14 +402,16 @@ def command_line_arguments():
 
     parser_result = parser.parse_args()
 
-    if len(parser_result[0].no_points_per_axis.split(' ')) != parser_result[0].dimension:
-        raise RuntimeError('Invalid number of points per axis.')
+    if parser_result[0].no_points_per_axis is not None:
+        if len(parser_result[0].no_points_per_axis.split(' ')) != parser_result[0].dimension:
+            raise RuntimeError('Invalid number of points per axis.')
 
     return parser_result
 
 
 def main():
     (options, args) = command_line_arguments()
+    random_heights = None
 
     if options.generate_input: 
         input_gen = InputGenerator(options.input_file,
@@ -462,8 +419,9 @@ def main():
                                    options.no_points_per_axis,
                                    options.from_poly)
         input_gen.generate_test_file()
+        random_heights = input_gen.random_heights
 
-    cons = Consistency(options.input_file, input_gen.random_heights)
+    cons = Consistency(options.input_file, random_heights)
     cons.solve_LP_problem()
     cons.plot_3D_objects_for_2D_case()
 

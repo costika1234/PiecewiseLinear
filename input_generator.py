@@ -88,40 +88,6 @@ class InputGenerator:
         f.write('# End of %d depth \n' % depth)
 
 
-    def generate_tuples_info(file_descriptor, n, no_points_per_axis, grid_info, is_function_info, 
-                             polynomial):
-        no_elements = np.prod(no_points_per_axis)
-        dt = Utils.get_dtype(n, is_function_info)
-
-        if is_function_info:
-            # Create flat array with pairs (c-, c+).
-            if polynomial:
-                flat_function_info = get_flat_info_from_polynomial(polynomial, 
-                                                                   grid_info, 
-                                                                   no_points_per_axis, 
-                                                                   is_function_info) 
-            else:
-                flat_function_info = get_zipped_list(no_elements)
-
-            nd_array = np.array(flat_function_info, dtype=dt).reshape(no_points_per_axis)
-        else:
-            # Create flat array with tuples ((c1-, c1+), (c2-, c2+), ...).
-            if polynomial:
-                flat_derivative_info = get_flat_info_from_polynomial(polynomial, 
-                                                                     grid_info, 
-                                                                     no_points_per_axis, 
-                                                                     is_function_info) 
-            else:
-                zipped = get_zipped_list_2(no_elements)
-                flat_derivative_info = zip(*[zipped for _ in range(n)])
-                
-            nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_points_per_axis)
-
-        # Write contents to file.
-        file_descriptor.write('# Array shape: {0}\n'.format(nd_array.shape))
-        traverse_nd_array(nd_array, file_descriptor, n)
-
-
     def generate_flat_info(self, is_function_info):
         flat_info = []
         grid_indices = Utils.get_grid_indices(self.no_points_per_axis, ignore_last=False)
@@ -162,7 +128,7 @@ class InputGenerator:
                                          (coord_neighbour[axis] - coord[axis])
                 
                 # Convert the derived values to intervals (b-, b+).
-                d_intervals = tuple([(d_value -  EPS, d_value + EPS) for d_value in d_values])
+                d_intervals = tuple([(d_value - EPS, d_value + EPS) for d_value in d_values])
                 flat_info.append(d_intervals)
 
         return flat_info
