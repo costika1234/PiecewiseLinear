@@ -20,20 +20,20 @@ POLY_DEGREE = 10
 POLY_MIN_COEF = -40
 POLY_MAX_COEF = 40
 
-RANDOM_LOWER_BOUND = 10
-RANDOM_UPPER_BOUND = 20
-EPS = 20.0
+RANDOM_LOWER_BOUND = 0
+RANDOM_UPPER_BOUND = 40
 
 class InputGenerator:
     
-    def __init__(self, input_file, n, no_points_per_axis, from_poly=False):
+    def __init__(self, input_file, n, no_points_per_axis, from_poly=False, eps=10.0):
         self.input_file = input_file
         self.n = n
         self.no_points_per_axis = [int(i) for i in no_points_per_axis.split(' ')]
         self.from_poly = from_poly
         self.random_heights = np.zeros(self.no_points_per_axis)
         self.no_vars = np.prod(self.no_points_per_axis)
-        self.grid_info = None  
+        self.grid_info = None 
+        self.eps = eps
 
 
     def init_random_heights(self):
@@ -97,7 +97,7 @@ class InputGenerator:
             f_value = self.random_heights[grid_index]
 
             if is_function_info:
-                # Ensure that we generate overlapping intervals among all neighbours (if any).
+                # Ensure that we generate wide enough intervals that contain all adjacent points. 
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
                     grid_indices_neighbours = Utils.get_grid_indices_neighbours(grid_index)
                     min_h, max_h = float('inf'), float('-inf')
@@ -106,10 +106,10 @@ class InputGenerator:
                         f_value_neighbour = self.random_heights[grid_index_neighbour]
                         min_h, max_h = min(min_h, f_value_neighbour), max(max_h, f_value_neighbour)
 
-                    offset = (max_h - min_h) / 2 + EPS
+                    offset = max_h - min_h + self.eps
                     f_interval = (f_value - offset, f_value + offset)
                 else:
-                    f_interval = (f_value - EPS, f_value + EPS)
+                    f_interval = (f_value - self.eps, f_value + self.eps)
 
                 flat_info.append(f_interval)
 
@@ -128,7 +128,7 @@ class InputGenerator:
                                          (coord_neighbour[axis] - coord[axis])
                 
                 # Convert the derived values to intervals (b-, b+).
-                d_intervals = tuple([(d_value - EPS, d_value + EPS) for d_value in d_values])
+                d_intervals = tuple([(d_val - self.eps, d_val + self.eps) for d_val in d_values])
                 flat_info.append(d_intervals)
 
         return flat_info

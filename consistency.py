@@ -321,11 +321,11 @@ class Consistency:
         plt.xticks(self.grid_info[0])
         plt.yticks(self.grid_info[1])
 
-        ax.set_zlim(min(min_z) - 1.0, max(max_z) + 1.0)
-
         if self.random_heights is not None:
             ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5, 
                             antialiased=False, triangles=triangles)
+
+        ax.set_zlim(min(min_z) - 1.0, max(max_z) + 1.0)
 
         plt.show()
 
@@ -422,6 +422,10 @@ def main():
         random_heights = input_gen.random_heights
 
     cons = Consistency(options.input_file, random_heights)
+ 
+    print "RANDOM HEIGHTS:\n"
+    print random_heights
+
     cons.solve_LP_problem()
     cons.plot_3D_objects_for_2D_case()
 
