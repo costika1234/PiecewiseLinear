@@ -52,3 +52,13 @@ class Utils:
         result = list(grid_index)
         result[axis] = result[axis] + 1
         return tuple(result)
+
+
+    @staticmethod
+    def get_dtype(dimension, is_function_info):
+        if is_function_info:
+            return ('float64, float64')
+
+        tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
+        return [(str(dimension + 1), tuple_dtype) for dimension in range(dimension)]
+

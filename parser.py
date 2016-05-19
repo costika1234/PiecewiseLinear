@@ -1,17 +1,9 @@
 #/usr/local/bin/python
  
-from cvxopt import matrix, solvers, sparse, spmatrix
-from mpl_toolkits.mplot3d import Axes3D
-from operator import mul
-from optparse import OptionParser
-from sympy import poly
+from utils import Utils
 
-import itertools
-import matplotlib.pyplot as plt
 import numpy as np
 import re
-import sympy as sp
-import sys
 
 LOWER_BOUND = 'lower_bound'
 UPPER_BOUND = 'upper_bound'
@@ -25,8 +17,6 @@ FLOAT_NUMBER_REGEX = r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
 DIMENSION_REGEX    = r'# Dimension: (\d+)'
 
 class Parser:
-    def __init__():
-        pass
 
     @staticmethod
     def init_dimension(input_file):
@@ -60,7 +50,7 @@ class Parser:
                             break
                         function_info_lines.append(line.rstrip())
 
-        return parse_tuples_info(function_info_lines, dimension, no_points_per_axis, True)
+        return Parser.parse_tuples_info(function_info_lines, dimension, no_points_per_axis, True)
 
 
     @staticmethod
@@ -72,7 +62,7 @@ class Parser:
                     for line in f:
                         derivative_info_lines.append(line.rstrip())
 
-        return parse_tuples_info(derivative_info_lines, dimension, no_points_per_axis, False)
+        return Parser.parse_tuples_info(derivative_info_lines, dimension, no_points_per_axis, False)
 
 
     @staticmethod
@@ -86,9 +76,9 @@ class Parser:
         # Constructs a regex to match either (x, y) - for function information, or
         # ((a, b), (c, d), ...) - for derivative information.
         if is_function_info:
-            return build_tuples_regex_for_dimension(1)
+            return Parser.build_tuples_regex_for_dimension(1)
 
-        return r'\(' + r',\s*'.join([build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r'\)'
+        return r'\(' + r',\s*'.join([Parser.build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r'\)'
 
 
     @staticmethod
@@ -103,7 +93,7 @@ class Parser:
     @staticmethod
     def parse_tuples_info(lines, dimension, no_points_per_axis, is_function_info):
         flat_nd_list = []
-        regex = build_tuples_regex(dimension, is_function_info)
+        regex = Parser.build_tuples_regex(dimension, is_function_info)
 
         for line in lines:
             # Ignore possible comments in the input lines.
@@ -112,8 +102,9 @@ class Parser:
 
             # Append the pairs/tuples of lower and upper bounds to the flat list.
             for match in re.finditer(regex, line):
-                flat_nd_list.append(build_tuple_match(dimension, match, is_function_info))
+                flat_nd_list.append(Parser.build_tuple_match(dimension, match, is_function_info))
 
         # Finally, convert to the shape of an n-dimensional array from the given points.
         return np.array(flat_nd_list, \
-                        dtype=get_dtype(dimension, is_function_info)).reshape(no_points_per_axis)
+                        dtype=Utils.get_dtype(dimension, is_function_info)).reshape(no_points_per_axis)
+

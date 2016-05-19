@@ -47,9 +47,8 @@ class InputGenerator:
                 coord = Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
                 flat_random_heights[index] = poly.eval(coord)
         else:
-            a = RANDOM_LOWER_BOUND
-            b = RANDOM_UPPER_BOUND
-            flat_random_heights = (b - a) * np.random.random_sample((self.no_vars,)) + a
+            flat_random_heights = (RANDOM_UPPER_BOUND - RANDOM_LOWER_BOUND) * \
+                                   np.random.random_sample((self.no_vars,)) + RANDOM_LOWER_BOUND
 
         self.random_heights = flat_random_heights.reshape(self.no_points_per_axis)
 
@@ -78,14 +77,6 @@ class InputGenerator:
         return poly(' + '.join(poly_terms), gens=poly_vars)
 
 
-    def get_dtype(self, dimension, is_function_info):
-        if is_function_info:
-            return ('float64, float64')
-
-        tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
-        return [(str(dimension + 1), tuple_dtype) for dimension in range(dimension)]
-
-
     def traverse_nd_array(self, nd_array, f, depth):
         # Function which recursively traverses an n-dimenionsal array and saves the array to file.
         if depth == 2:
@@ -100,7 +91,7 @@ class InputGenerator:
     def generate_tuples_info(file_descriptor, n, no_points_per_axis, grid_info, is_function_info, 
                              polynomial):
         no_elements = np.prod(no_points_per_axis)
-        dt = get_dtype(n, is_function_info)
+        dt = Utils.get_dtype(n, is_function_info)
 
         if is_function_info:
             # Create flat array with pairs (c-, c+).
@@ -177,8 +168,8 @@ class InputGenerator:
         return flat_info
 
 
-    def generate_tuples_info_2(self, file_descriptor, is_function_info):
-        dt = self.get_dtype(self.n, is_function_info)
+    def generate_tuples_info(self, file_descriptor, is_function_info):
+        dt = Utils.get_dtype(self.n, is_function_info)
 
         flat_info = self.generate_flat_info(is_function_info)
         nd_array = np.array(flat_info, dtype=dt).reshape(self.no_points_per_axis)
@@ -210,11 +201,12 @@ class InputGenerator:
             f.write('\n# Function information (specified as a %d-dimensional array of intervals, where '
                     'an entry is of the form (c-, c+), c- <= c+, and represents the constraint for the '
                     'function value at a particular grid point):\n' % self.n)
-            self.generate_tuples_info_2(f, is_function_info=True)
+            self.generate_tuples_info(f, is_function_info=True)
 
             # Derivative information.
             f.write('\n# Derivative information (specified as a %d-dimensional array of tuples of '
                     'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), ci- <= ci+,'
                     ' and represents the constraints along each partial derivative at a '
                     'particular grid point):\n' % self.n)
-            self.generate_tuples_info_2(f, is_function_info=False)
+            self.generate_tuples_info(f, is_function_info=False)
+

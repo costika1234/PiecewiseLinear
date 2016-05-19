@@ -6,6 +6,7 @@ from operator import mul
 from optparse import OptionParser
 from sympy import poly
 from input_generator import InputGenerator
+from parser import Parser
 
 import itertools
 import matplotlib.pyplot as plt
@@ -14,273 +15,6 @@ import re
 import sympy as sp
 import sys
 
-
-LOWER_BOUND = 'lower_bound'
-UPPER_BOUND = 'upper_bound'
-
-GRID_INFO_STRING       = r'# Grid information'
-POLYNOMIAL_INFO_STRING = r'# Polynomial information'
-FUNCTION_INFO_STRING   = r'# Function information'
-DERIVATIVE_INFO_STRING = r'# Derivative information'
-
-FLOAT_NUMBER_REGEX = r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
-DIMENSION_REGEX    = r'# Dimension: (\d+)'
-
-####################################################################################################
-######################################### DATA GENERATION ##########################################
-####################################################################################################
-
-
-def get_flat_info_from_polynomial(polynomial, grid_info, no_points_per_axis, is_function_info):
-    n = len(grid_info)
-        
-    grid_points = generate_indices(no_points_per_axis, False)
-    flat_info = []
-    eps = 20.0
-
-    # Generate intervals from the given polynomial.
-    for grid_point in grid_points:
-        point = tuple([grid_info[i][grid_point[i]] for i in range(n)])
-        
-        # print point
-
-        if is_function_info:
-            f_value = float(polynomial.eval(point))
-            # Default interval (in case there are no neighbours).
-            f_interval = (f_value - eps, f_value + eps)
-            if not is_border_index(grid_point, no_points_per_axis):
-                neighbours = generate_grid_indices_neighbours(grid_point, n)
-                min_height = float('inf')
-                max_height = float('-inf')
-
-                for neighbour in neighbours:
-                    neighbour_point = tuple([grid_info[i][neighbour[i]] for i in range(n)])
-                    min_height = min(min_height, polynomial.eval(neighbour_point))
-                    max_height = max(max_height, polynomial.eval(neighbour_point))
-
-                distance = (max_height - min_height) / 2 + eps
-                f_interval = (f_value - 0.5 * distance, f_value + distance)
-
-            flat_info.append(f_interval)
-
-            # print '------------'
-
-        else:
-            d_values = [0.0] * n
-
-            for ith_partial_derivative in range(n):
-                next_grid_point = get_neighbour_for_grid_index(grid_point, ith_partial_derivative)
-                if next_grid_point[ith_partial_derivative] < no_points_per_axis[ith_partial_derivative]:
-                    next_point = tuple([grid_info[i][next_grid_point[i]] for i in range(n)])
-                    f_value = float(polynomial.eval(point))
-                    f_value_next = float(polynomial.eval(next_point))
-                    
-                    d_values[ith_partial_derivative] = \
-                        (f_value_next - f_value) / \
-                        (next_point[ith_partial_derivative] - point[ith_partial_derivative])
-                    
-            d_intervals = tuple([(d_value -  eps, d_value + 3 * eps) for d_value in d_values])
-
-            flat_info.append(d_intervals)
-
-    #import sys
-    #sys.exit()
-
-    return flat_info
-
-
-def get_zipped_list(no_elements):
-    # Returns a list of the form: [(a, b), ...] to help generating dummy data.
-    # l = np.array([round(x, 2) for x in np.linspace(no_elements, 1.0, no_elements)])
-    l = np.random.randint(10, 20, no_elements)
-    # u = l + no_elements
-    u = l + 10
-    return zip(l, u)
-
-
-def get_zipped_list_2(no_elements):
-    # Returns a list of the form: [(a, b), ...] to help generating dummy data.
-    l = np.random.randint(-20, 0, no_elements)
-    u = l + 20
-    return zip(l, u)
-
-
-def get_dtype(dimension, is_function_info):
-    if is_function_info:
-        return ('float64, float64')
-
-    tuple_dtype = [('lower_bound', 'float64'), ('upper_bound', 'float64')]
-    return [(str(dimension + 1), tuple_dtype) for dimension in range(dimension)]
-
-
-def traverse_nd_array(nd_array, f, depth):
-    # Function which recursively traverses an n-dimenionsal array and saves the array to file.
-    if depth == 2:
-        np.savetxt(f, nd_array, fmt='%s')
-    else:
-        for sub_nd_array in nd_array:
-            traverse_nd_array(sub_nd_array, f, depth - 1)
-
-    f.write('# End of %d depth \n' % depth)
-
-
-def generate_tuples_info(file_descriptor, n, no_points_per_axis, grid_info, is_function_info, 
-                         polynomial):
-    no_elements = np.prod(no_points_per_axis)
-    dt = get_dtype(n, is_function_info)
-
-    if is_function_info:
-        # Create flat array with pairs (c-, c+).
-        if polynomial:
-            flat_function_info = get_flat_info_from_polynomial(polynomial, 
-                                                               grid_info, 
-                                                               no_points_per_axis, 
-                                                               is_function_info) 
-        else:
-            flat_function_info = get_zipped_list(no_elements)
-
-        nd_array = np.array(flat_function_info, dtype=dt).reshape(no_points_per_axis)
-    else:
-        # Create flat array with tuples ((c1-, c1+), (c2-, c2+), ...).
-        if polynomial:
-            flat_derivative_info = get_flat_info_from_polynomial(polynomial, 
-                                                                 grid_info, 
-                                                                 no_points_per_axis, 
-                                                                 is_function_info) 
-        else:
-            zipped = get_zipped_list_2(no_elements)
-            flat_derivative_info = zip(*[zipped for _ in range(n)])
-            
-        nd_array = np.array(flat_derivative_info, dtype=dt).reshape(no_points_per_axis)
-
-    # Write contents to file.
-    file_descriptor.write('# Array shape: {0}\n'.format(nd_array.shape))
-    traverse_nd_array(nd_array, file_descriptor, n)
-
-
-def generate_test_file(input_file, n, no_points_per_axis, from_poly):
-    # Initialize the number of points on each axis that will determine the grid.
-    # no_points_per_axis = tuple([x + 3 for x in range(n)])
-    no_points_per_axis = tuple([no_points_per_axis] * n)
-    polynomial = None
-    if from_poly:
-        polynomial = build_polynomial(get_coefs_exponents_list(n))
-
-    with open(input_file, 'w+') as f:
-        # Dimension.
-        f.write('# Dimension: %d\n\n' % n)
-
-        # Grid points.
-        f.write('# Grid information (each of the %d lines specify divisions on the domain axis, in '
-                'strictly increasing order. The endpoints will therefore specify the constraints '
-                'for the function domain):\n' % n)
-        for no_points in no_points_per_axis:
-            np.savetxt(f, np.linspace(0.0, 1.0, no_points), newline=' ', fmt='%s')
-            f.write('\n')
-
-    # Retrieve the grid points.
-    grid_info = init_grid_info(input_file, n)
-        
-    with open(input_file, 'a+') as f:
-        # Function information.
-        f.write('\n# Function information (specified as a %d-dimensional array of intervals, where '
-                'an entry is of the form (c-, c+), c- < c+, and represents the constraint for the '
-                'function value at a particular grid point):\n' % n)
-        generate_tuples_info(f, n, no_points_per_axis, grid_info, True, polynomial)
-
-        # Derivative information.
-        f.write('\n# Derivative information (specified as a %d-dimensional array of tuples of '
-                'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), ci- < ci+,'
-                ' and represents the constraints along each partial derivative at a '
-                'particular grid point):\n' % n)
-        generate_tuples_info(f, n, no_points_per_axis, grid_info, False, polynomial)
-
-    return polynomial
-
-####################################################################################################
-############################################# PARSING ##############################################
-####################################################################################################
-
-def init_dimension(input_file):
-    with open(input_file, 'r') as f:
-        return int(re.search(DIMENSION_REGEX, f.readline()).group(1))
-
-
-def init_grid_info(input_file, dimension):
-    grid_list = []
-    with open(input_file, 'r') as f:
-        for line in f:
-            if line.startswith(GRID_INFO_STRING):
-                grid_list = [map(float, next(f).split()) for x in xrange(dimension)]
-                return np.array(grid_list)
-
-
-def init_no_points_per_axis(grid_info):
-    return [len(grid_info[axis]) for axis in range(len(grid_info))]
-
-
-def init_function_info(input_file, dimension, no_points_per_axis):
-    function_info_lines = []
-    with open(input_file, 'r') as f:
-        for line in f:
-            if line.startswith(FUNCTION_INFO_STRING):
-                for line in f:
-                    if line.startswith(DERIVATIVE_INFO_STRING):
-                        break
-                    function_info_lines.append(line.rstrip())
-
-    return parse_tuples_info(function_info_lines, dimension, no_points_per_axis, True)
-
-
-def init_derivative_info(input_file, dimension, no_points_per_axis):
-    derivative_info_lines = []
-    with open(input_file, 'r') as f:
-        for line in f:
-            if line.startswith(DERIVATIVE_INFO_STRING):
-                for line in f:
-                    derivative_info_lines.append(line.rstrip())
-
-    return parse_tuples_info(derivative_info_lines, dimension, no_points_per_axis, False)
-
-
-def build_tuples_regex_for_dimension(d):
-    return r'\((?P<' + LOWER_BOUND + r'_' + str(d) + r'>' + FLOAT_NUMBER_REGEX + r'),\s*' + \
-             r'(?P<' + UPPER_BOUND + r'_' + str(d) + r'>' + FLOAT_NUMBER_REGEX + r')\)' 
-
-
-def build_tuples_regex(n, is_function_info):
-    # Constructs a regex to match either (x, y) - for function information, or
-    # ((a, b), (c, d), ...) - for derivative information.
-    if is_function_info:
-        return build_tuples_regex_for_dimension(1)
-
-    return r'\(' + r',\s*'.join([build_tuples_regex_for_dimension(d + 1) for d in range(n)]) + r'\)'
-
-
-def build_tuple_match(n, match, is_function_info):
-    if is_function_info:
-        return tuple([match.group(LOWER_BOUND + '_1'), match.group(UPPER_BOUND + '_1')])
-
-    return tuple([(match.group(LOWER_BOUND + '_%d' % (d + 1)), \
-                   match.group(UPPER_BOUND + '_%d' % (d + 1))) for d in range(n)])
-
-
-def parse_tuples_info(lines, dimension, no_points_per_axis, is_function_info):
-    flat_nd_list = []
-    regex = build_tuples_regex(dimension, is_function_info)
-
-    for line in lines:
-        # Ignore possible comments in the input lines.
-        if line.startswith('#'):
-            continue
-
-        # Append the pairs/tuples of lower and upper bounds to the flat list.
-        for match in re.finditer(regex, line):
-            flat_nd_list.append(build_tuple_match(dimension, match, is_function_info))
-
-    # Finally, convert to the shape of an n-dimensional array from the given points.
-    return np.array(flat_nd_list, \
-                    dtype=get_dtype(dimension, is_function_info)).reshape(no_points_per_axis)
 
 ####################################################################################################
 ################################## LINEAR PROGRAMMING ALGORITHM ####################################
@@ -411,21 +145,25 @@ def build_matrix_for_partial_derivative(offset, block_height, no_sub_blocks, dis
 
 class Consistency:
 
-    def __init__(self, dimension, input_file):
+    def __init__(self, input_file, random_heights):
         # Domain dimension (integer).
-        self.n = dimension
+        self.n = Parser.init_dimension(input_file)
 
         # Grid information (numpy array).
-        self.grid_info = init_grid_info(input_file, self.n)
+        self.grid_info = Parser.init_grid_info(input_file, self.n)
 
         # Number of points on each of the 'n' axis (list).
-        self.no_points_per_axis = init_no_points_per_axis(self.grid_info)
+        self.no_points_per_axis = Parser.init_no_points_per_axis(self.grid_info)
 
         # Function information (n-dim numpy array of pairs).
-        self.function_info = init_function_info(input_file, self.n, self.no_points_per_axis)
+        self.function_info = Parser.init_function_info(input_file, 
+                                                       self.n, 
+                                                       self.no_points_per_axis)
         
         # Derivative information (n-dim numpy array of tuples).
-        self.derivative_info = init_derivative_info(input_file, self.n, self.no_points_per_axis)
+        self.derivative_info = Parser.init_derivative_info(input_file, 
+                                                           self.n, 
+                                                           self.no_points_per_axis)
 
         # Minimum heights for least witness of consistency (n-dim numpy array).
         self.min_heights = np.zeros(self.no_points_per_axis)
@@ -437,7 +175,7 @@ class Consistency:
         self.no_vars = np.prod(self.no_points_per_axis)
 
         # Randomly generated heights to enable automatic testing (n-dim numpy array).
-        self.random_heights = np.zeros(self.no_points_per_axis)
+        self.random_heights = random_heights
 
 
     def solve_LP_problem(self):
@@ -725,14 +463,11 @@ def main():
                                    options.from_poly)
         input_gen.generate_test_file()
 
-    # cons = Consistency(options.input_file, options.dimension)
-
-    # cons = Consistency(options.input_file)
-    # cons.init_random_heights()
-
-    # cons.solve_LP_problem()
-    # cons.plot_3D_objects_for_2D_case()
+    cons = Consistency(options.input_file, input_gen.random_heights)
+    cons.solve_LP_problem()
+    cons.plot_3D_objects_for_2D_case()
 
 
 if __name__ == '__main__':
     main()
+
