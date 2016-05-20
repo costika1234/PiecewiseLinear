@@ -94,8 +94,8 @@ class InputGenerator:
                     grid_indices_neighbours = Utils.get_grid_indices_neighbours(grid_index)
                     min_h, max_h = float('inf'), float('-inf')
 
-                    for grid_index_neighbour in grid_indices_neighbours:
-                        f_value_neighbour = self.random_heights[grid_index_neighbour]
+                    for next_grid_index in grid_indices_neighbours:
+                        f_value_neighbour = self.random_heights[next_grid_index]
                         min_h, max_h = min(min_h, f_value_neighbour), max(max_h, f_value_neighbour)
 
                     f_interval = (min_h - self.eps, max_h + self.eps)
@@ -111,12 +111,12 @@ class InputGenerator:
                 d_values = [0.0] * self.n
                 # Construct intervals for each partial derivative.
                 for axis in range(self.n):
-                    grid_index_neighbour = Utils.get_grid_index_neighbour_for_axis(grid_index, axis)
+                    next_grid_index = Utils.get_grid_index_neighbour_for_axis(grid_index, axis)
                     # Ensure that we do not step outside the grid when deriving 'b_ij' values 
                     # according to: b_ij = (h_i+1,j - h_ij) / (p_i+1 - p_i).
-                    if grid_index_neighbour[axis] < self.no_points_per_axis[axis]:
-                        f_value_neighbour = self.random_heights[grid_index_neighbour]
-                        coord_neighbour = Utils.convert_grid_index_to_coord(grid_index_neighbour,
+                    if next_grid_index[axis] < self.no_points_per_axis[axis]:
+                        f_value_neighbour = self.random_heights[next_grid_index]
+                        coord_neighbour = Utils.convert_grid_index_to_coord(next_grid_index,
                                                                             self.grid_info)            
                         d_values[axis] = (f_value_neighbour - f_value) / \
                                          (coord_neighbour[axis] - coord[axis])

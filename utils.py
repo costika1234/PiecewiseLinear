@@ -38,6 +38,13 @@ class Utils:
         return [tuple_sum_lambda(grid_index, perm) for perm in all_binary_perms]
 
 
+    @ staticmethod
+    def get_dimension_for_row_vector(no_points_per_axis, axis):
+        result = list(no_points_per_axis)
+        result[axis] = result[axis] - 1
+        return result
+
+
     @staticmethod
     def get_grid_index_neighbour_for_axis(grid_index, axis):
         result = list(grid_index)
