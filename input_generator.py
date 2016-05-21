@@ -1,8 +1,8 @@
 #/usr/local/bin/python
 
+from parser import Parser
 from sympy import poly
 from utils import Utils
-from parser import Parser
 
 import numpy as np
 import sympy as sp
@@ -81,6 +81,7 @@ class InputGenerator:
 
 
     def generate_flat_info(self, is_function_info):
+        # Reverse engineer the LP algorithm to construct input that guarantees consistency.
         flat_info = []
         grid_indices = Utils.get_grid_indices(self.no_points_per_axis, ignore_last=False)
 
@@ -104,6 +105,8 @@ class InputGenerator:
             else:
                 d_values = [(0.0, 0.0)] * self.n
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
+                    # Along each partial derivative and for all possible triangulations, compute
+                    # the minimum and maximum gradients based on the given heights.
                     for ith_partial in range(self.n):
                         partial_derivatives_end_points = Utils.get_partial_derivatives_end_points(
                             self.n)

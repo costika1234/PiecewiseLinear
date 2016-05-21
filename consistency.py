@@ -1,14 +1,13 @@
 #/usr/local/bin/python
  
 from cvxopt import matrix, solvers, sparse, spmatrix
+from input_generator import InputGenerator
 from mpl_toolkits.mplot3d import Axes3D
 from optparse import OptionParser
-from input_generator import InputGenerator
 from parser import Parser
 from utils import Utils
 
 import itertools
-import matplotlib as mpl
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,13 +28,10 @@ class Consistency:
         self.no_points_per_axis = Parser.init_no_points_per_axis(self.grid_info)
 
         # Function information (n-dim numpy array of pairs).
-        self.function_info = Parser.init_function_info(input_file, 
-                                                       self.n, 
-                                                       self.no_points_per_axis)
+        self.function_info = Parser.init_function_info(input_file, self.n, self.no_points_per_axis)
         
         # Derivative information (n-dim numpy array of tuples).
-        self.derivative_info = Parser.init_derivative_info(input_file, 
-                                                           self.n, 
+        self.derivative_info = Parser.init_derivative_info(input_file, self.n,
                                                            self.no_points_per_axis)
 
         # Minimum heights for least witness of consistency (n-dim numpy array).
@@ -122,14 +118,15 @@ class Consistency:
 
 
     def build_constraints_from_derivative_info(self):
-        # Construct bounds of the type: b_ij_1- <= (h_i+1,j - h_ij) / (p_i+1 - p_i) <= b_ij_1+
-        # along each of the partial derivatives.
+        # Construct bounds of the type: b_ij_1- <= (h_i+1,j - h_ij) / (p_i+1 - p_i) <= b_ij_1+.
         indices_allowing_neighbours = Utils.get_grid_indices(self.no_points_per_axis, True)
         partial_derivatives_end_points = Utils.get_partial_derivatives_end_points(self.n)
 
         l_b_constraints = []
         u_b_constraints = []
 
+        # Along each partial derivative and for all possible triangulations within a hyper-rectangle
+        # ensure that we construct the tightest bounds for consecutive differences of heigths.
         for ith_partial in range(self.n):
             partial_l_b_constraints = np.empty(
                 Utils.get_dimension_for_row_vector(self.no_points_per_axis, ith_partial))
@@ -164,7 +161,7 @@ class Consistency:
     def build_derivative_coef_matrix_and_column_vector(self):
         block_heights = Utils.calculate_block_heights(self.no_points_per_axis)
         adjacent_offsets = Utils.calculate_adjacent_sub_block_offsets(self.no_vars, 
-                                                                self.no_points_per_axis)
+                                                                      self.no_points_per_axis)
         matrices_list = []
 
         for index, block_height in enumerate(block_heights):
@@ -202,6 +199,7 @@ class Consistency:
         fig = plt.figure(figsize=(14.4, 9), facecolor='#34495e')
         fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
+        ax.set_axis_bgcolor('#34495e')
 
         # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in 
         # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
@@ -237,7 +235,6 @@ class Consistency:
 
         plt.xticks(self.grid_info[0])
         plt.yticks(self.grid_info[1])
-        ax.set_axis_bgcolor('#34495e')
         plt.show()
 
 
