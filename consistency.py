@@ -17,7 +17,7 @@ import sys
 
 class Consistency:
 
-    def __init__(self, input_file, random_heights):
+    def __init__(self, input_file, random_heights, plot_surfaces):
         # Domain dimension (integer).
         self.n = Parser.init_dimension(input_file)
 
@@ -46,6 +46,9 @@ class Consistency:
         # Randomly generated heights to enable automatic testing (n-dim numpy array).
         self.random_heights = random_heights
 
+        # Flag which specifies whether the surfaces will be plotted for the 2D case.
+        self.plot_surfaces = plot_surfaces
+
 
     def solve_LP_problem(self):
         (f_coef_matrix, f_column_vector) = self.build_function_coef_matrix_and_column_vector()
@@ -57,11 +60,12 @@ class Consistency:
         column_vector = matrix([f_column_vector, d_column_vector])
         
         min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
+        is_consistent = min_sol['x'] is not None
 
         # Print the LP problem for debugging purposes.
         self.display_LP_problem(coef_matrix, column_vector)
 
-        if min_sol['x'] is not None:
+        if is_consistent:
             self.min_heights = np.array(min_sol['x']).reshape(self.no_points_per_axis)
             print np.around(self.min_heights, decimals=2)
 
@@ -71,10 +75,13 @@ class Consistency:
             self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
             print np.around(self.max_heights, decimals=2)
 
-            # Display the plots for the 2D case.
-            self.plot_3D_objects_for_2D_case()
+            if self.plot_surfaces:
+                self.plot_3D_objects_for_2D_case()
+
         else:
             print 'No witness for consistency found.'
+
+        return is_consistent
 
 
     def build_constraints_from_function_info(self):
@@ -317,6 +324,8 @@ def command_line_arguments():
                       help='Specifies whether automatic input is generated to test consistency.')
     parser.add_option('', '--from-poly', dest='from_poly', action='store_true',
                       help='Specifies whether automatic input is generated from a polynomial.')
+    parser.add_option('', '--plot', dest='plot_surfaces', action='store_true',
+                      help='Specifies whether surfaces will be plotted for the 2D case.')
     parser.add_option('-e', '--epsilon', dest='epsilon', type='float',
                       help='Specifies the tolerance value for generating random intervals for '
                             'function and derivative information, respectively. When set to 0, '
@@ -355,7 +364,7 @@ def main():
         input_gen.generate_test_file()
         random_heights = input_gen.random_heights
 
-    cons = Consistency(options.input_file, random_heights)
+    cons = Consistency(options.input_file, random_heights, options.plot_surfaces)
     cons.solve_LP_problem()
 
 
