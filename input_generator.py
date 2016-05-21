@@ -85,10 +85,10 @@ class InputGenerator:
         grid_indices = Utils.get_grid_indices(self.no_points_per_axis, ignore_last=False)
 
         for grid_index in grid_indices:
-            coord = Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
-            f_value = self.random_heights[grid_index]
-
             if is_function_info:
+                f_interval = (0.0, 0.0)
+                coord = Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
+                f_value = self.random_heights[grid_index]
                 # Ensure that we generate wide enough intervals that contain all adjacent points. 
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
                     grid_indices_neighbours = Utils.get_grid_indices_neighbours(grid_index)
@@ -99,31 +99,36 @@ class InputGenerator:
                         min_h, max_h = min(min_h, f_value_neighbour), max(max_h, f_value_neighbour)
 
                     f_interval = (min_h - self.eps, max_h + self.eps)
-                else:
-                    # For border points (i.e. those who have at least one coordinate on the
-                    # rightmost endpoint of each axis), initialize a default interval, as the values
-                    # will never be used.
-                    f_interval = (0.0, 0.0)
 
                 flat_info.append(f_interval)
-
             else:
-                d_values = [0.0] * self.n
-                # Construct intervals for each partial derivative.
-                for axis in range(self.n):
-                    next_grid_index = Utils.get_grid_index_neighbour_for_axis(grid_index, axis)
-                    # Ensure that we do not step outside the grid when deriving 'b_ij' values 
-                    # according to: b_ij = (h_i+1,j - h_ij) / (p_i+1 - p_i).
-                    if next_grid_index[axis] < self.no_points_per_axis[axis]:
-                        f_value_neighbour = self.random_heights[next_grid_index]
-                        coord_neighbour = Utils.convert_grid_index_to_coord(next_grid_index,
-                                                                            self.grid_info)            
-                        d_values[axis] = (f_value_neighbour - f_value) / \
-                                         (coord_neighbour[axis] - coord[axis])
-                
-                # Convert the derived values to intervals (b-, b+).
-                d_intervals = tuple([(d_val - self.eps, d_val + self.eps) for d_val in d_values])
-                flat_info.append(d_intervals)
+                d_values = [(0.0, 0.0)] * self.n
+                if not Utils.is_border_index(grid_index, self.no_points_per_axis):
+                    for ith_partial in range(self.n):
+                        partial_derivatives_end_points = Utils.get_partial_derivatives_end_points(
+                            self.n)
+                        next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
+                        min_b, max_b = float('inf'), float('-inf')
+
+                        for end_points in partial_derivatives_end_points[ith_partial]:
+                            next_index = next_grid_indices[end_points[1]]
+                            curr_index = next_grid_indices[end_points[0]]
+
+                            next_coord = Utils.convert_grid_index_to_coord(next_index, 
+                                self.grid_info)
+                            curr_coord = Utils.convert_grid_index_to_coord(curr_index, 
+                                self.grid_info)
+
+                            f_value_next = self.random_heights[next_index]
+                            f_value_curr = self.random_heights[curr_index]
+                            grid_diff = next_coord[ith_partial] - curr_coord[ith_partial]
+                            gradient = (f_value_next - f_value_curr) / grid_diff
+
+                            min_b, max_b = min(min_b, gradient), max(max_b, gradient)
+
+                        d_values[ith_partial] = (min_b - self.eps, max_b + self.eps)
+
+                flat_info.append(tuple(d_values))
 
         return flat_info
 

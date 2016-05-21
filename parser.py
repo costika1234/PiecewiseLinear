@@ -107,5 +107,6 @@ class Parser:
 
         # Finally, convert to the shape of an n-dimensional array from the given points.
         return np.array(flat_nd_list, \
-                        dtype=Utils.get_dtype(dimension, is_function_info)).reshape(no_points_per_axis)
+                        dtype=Utils.get_dtype(dimension, is_function_info)).reshape(
+                        no_points_per_axis)
 

@@ -4,6 +4,7 @@ from cvxopt import spmatrix
 from operator import mul
 
 import itertools
+import numpy as np
 
 class Utils:
 
@@ -62,6 +63,29 @@ class Utils:
                 args.append(range(no_points))
 
         return list(itertools.product(*args))
+
+
+    @staticmethod
+    def get_partial_derivatives_end_points(dimension):
+        no_cols = 2**(dimension - 1)
+        result = np.zeros((dimension, no_cols), dtype=('int, int'))
+
+        for index, row in enumerate(result):
+            step = 2**(dimension - index - 1)
+            for j in range(step):
+                row[j][0] = j
+                row[j][1] = row[j][0] + step
+
+        for index in range(1, len(result)):
+            step = 2**(dimension - index - 1)
+            offset = 2 * step
+
+            for j in range(no_cols):
+                if j + step < no_cols:
+                    result[index][j + step][0] = result[index][j][0] + offset
+                    result[index][j + step][1] = result[index][j][1] + offset
+            
+        return result
 
 
     @staticmethod
@@ -139,4 +163,17 @@ class Utils:
         column_range = column_range_minus_ones + [x + distance for x in column_range_minus_ones]
 
         return spmatrix(minus_ones_and_ones, row_range, column_range)
+
+
+    @staticmethod
+    def get_triangulation(x_dim, y_dim):
+        triangles = []
+
+        for i in range(x_dim - 1):
+            for j in range(y_dim - 1):
+                label = y_dim * i + j
+                triangles.append([label, label + y_dim, label + 1])
+                triangles.append([label + y_dim, label + y_dim + 1, label + 1])
+
+        return triangles
 

@@ -8,6 +8,8 @@ from parser import Parser
 from utils import Utils
 
 import itertools
+import matplotlib as mpl
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import re
@@ -73,6 +75,8 @@ class Consistency:
             self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
             print np.around(self.max_heights, decimals=2)
 
+            # Display the plots for the 2D case.
+            self.plot_3D_objects_for_2D_case()
         else:
             print 'No witness for consistency found.'
 
@@ -117,138 +121,42 @@ class Consistency:
         return (coef_matrix, column_vector)
 
 
-    def get_partial_derivatives_end_points(self, dimension):
-        no_cols = 2**(dimension - 1)
-        result = np.zeros((dimension, no_cols), dtype=('int, int'))
-
-        for index, row in enumerate(result):
-            step = 2**(dimension - index - 1)
-            for j in range(step):
-                row[j][0] = j
-                row[j][1] = row[j][0] + step
-
-        for index in range(1, len(result)):
-            step = 2**(dimension - index - 1)
-            offset = 2 * step
-
-            for j in range(no_cols):
-                if j + step < no_cols:
-                    result[index][j + step][0] = result[index][j][0] + offset
-                    result[index][j + step][1] = result[index][j][1] + offset
-            
-        return result
-
-
     def build_constraints_from_derivative_info(self):
+        # Construct bounds of the type: b_ij_1- <= (h_i+1,j - h_ij) / (p_i+1 - p_i) <= b_ij_1+
+        # along each of the partial derivatives.
         indices_allowing_neighbours = Utils.get_grid_indices(self.no_points_per_axis, True)
+        partial_derivatives_end_points = Utils.get_partial_derivatives_end_points(self.n)
 
-        partial_derivatives_end_points = self.get_partial_derivatives_end_points(self.n)
-
-        print partial_derivatives_end_points
-
-        # for grid_index in indices_allowing_neighbours:
-        #     print grid_index
-
-        #     next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
-        #     print next_grid_indices
-
-        #     for ith_partial in range(self.n):
-        #         for end_points in partial_derivatives_end_points[ith_partial]:
-        #             next_index = next_grid_indices[end_points[1]]
-        #             curr_index = next_grid_indices[end_points[0]]
-
-        #             print next_index, curr_index
-        #         print "--------"
-        
-
-        ### NEW STUFF
-
-        no_rows_for_partial_derivatives = Utils.calculate_block_heights(self.no_points_per_axis)
-
-        # print no_rows_for_partial_derivatives
-
-        u_b_constraints = []
         l_b_constraints = []
+        u_b_constraints = []
 
         for ith_partial in range(self.n):
-            partial_l_b_constraints = np.empty(Utils.get_dimension_for_row_vector(
-                self.no_points_per_axis, ith_partial))
-            partial_l_b_constraints.fill(float('-inf'))
+            partial_l_b_constraints = np.empty(
+                Utils.get_dimension_for_row_vector(self.no_points_per_axis, ith_partial))
+            partial_u_b_constraints = np.empty(
+                Utils.get_dimension_for_row_vector(self.no_points_per_axis, ith_partial))
 
-            partial_u_b_constraints = np.empty(Utils.get_dimension_for_row_vector(
-                self.no_points_per_axis, ith_partial))
+            partial_l_b_constraints.fill(float('-inf'))
             partial_u_b_constraints.fill(float('inf'))
 
             for grid_index in indices_allowing_neighbours:
-                print grid_index
-
                 next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
 
                 for end_points in partial_derivatives_end_points[ith_partial]:
                     next_index = next_grid_indices[end_points[1]]
                     curr_index = next_grid_indices[end_points[0]]
 
-                    print " --> ", next_index, curr_index
-
-                    next_axis_index = next_index[ith_partial]
-                    curr_axis_index = curr_index[ith_partial]
-
-                    grid_diff = self.grid_info[ith_partial][next_axis_index] - \
-                                self.grid_info[ith_partial][curr_axis_index]
+                    next_coord = Utils.convert_grid_index_to_coord(next_index, self.grid_info)
+                    curr_coord = Utils.convert_grid_index_to_coord(curr_index, self.grid_info)
+                    grid_diff = next_coord[ith_partial] - curr_coord[ith_partial]
 
                     partial_l_b_constraints[curr_index] = max(partial_l_b_constraints[curr_index], \
                         grid_diff * self.derivative_info[grid_index][ith_partial][0])
                     partial_u_b_constraints[curr_index] = min(partial_u_b_constraints[curr_index], \
                         grid_diff * self.derivative_info[grid_index][ith_partial][1])
 
-                    #print curr_index 
-
             l_b_constraints.extend(partial_l_b_constraints.flatten().tolist())
             u_b_constraints.extend(partial_u_b_constraints.flatten().tolist())
-
-
-        # print np.array(u_b_constraints)
-        #print "------------------------------------"
-
-        ## END NEEW STUFF
-
-
-        # grid_indices_excluding_last_point \
-        #     = [Utils.get_grid_indices_excluding_last_point_on_axis(self.no_points_per_axis, i) \
-        #        for i in range(self.n)]
-
-        # # Number of elements for each of the upper/lower bound column vectors.
-        # no_elems_b_vec = sum([len(x) for x in grid_indices_excluding_last_point]) 
-        
-        # # print "no_elems_b_vec =", no_elems_b_vec
-        # # print grid_indices_excluding_last_point
-
-        # l_b_constraints_2 = np.empty(no_elems_b_vec)
-        # u_b_constraints_2 = np.empty(no_elems_b_vec)
-
-        # index = 0
-       
-        # for ith_partial, coords in enumerate(grid_indices_excluding_last_point):
-        #     print coords
-        #     for coord in coords:
-        #         print coord
-        #         next_index, current_index = coord[ith_partial] + 1, coord[ith_partial]
-        #         grid_diff = self.grid_info[ith_partial][next_index] - \
-        #                     self.grid_info[ith_partial][current_index]
-        #         l_b_constraints_2[index] = grid_diff * self.derivative_info[coord][ith_partial][0]
-        #         u_b_constraints_2[index] = grid_diff * self.derivative_info[coord][ith_partial][1]
-        #         index = index + 1
-
-        #         #print coord
-
-        # print np.array(u_b_constraints)
-        # print "---------------------------"
-        # print u_b_constraints_2
-        # print "---------------------------"
-        # print u_b_constraints_2 - np.array(u_b_constraints)
-
-        # import sys
-        # sys.exit()
 
         return (l_b_constraints, u_b_constraints)
 
@@ -291,40 +199,45 @@ class Consistency:
         min_z = self.min_heights.flatten()
         max_z = self.max_heights.flatten()
 
-        fig = plt.figure()
+        fig = plt.figure(figsize=(14.4, 9), facecolor='#34495e')
         fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
+
         # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in 
         # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
-        triangles = []
-
         x_dim = self.no_points_per_axis[0]
         y_dim = self.no_points_per_axis[1]
-
-        for i in range(x_dim - 1):
-            for j in range(y_dim - 1):
-                label = y_dim * i + j
-                triangles.append([label, label + y_dim, label + 1])
-                triangles.append([label + y_dim, label + y_dim + 1, label + 1])
+        triangles = Utils.get_triangulation(x_dim, y_dim)
 
         ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=0.5, antialiased=False, 
                         triangles=triangles)
         ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=0.5, antialiased=False, 
                         triangles=triangles)
 
-        ax.set_xlabel('X axis')
-        ax.set_ylabel('Y axis')
-        ax.set_zlabel('Z axis')
-
-        plt.xticks(self.grid_info[0])
-        plt.yticks(self.grid_info[1])
-
+        least_surface = mpatches.Patch(color='#3498db', label='Least Surface')
+        greatest_surface = mpatches.Patch(color='#e74c3c', label='Greatest Surface')
+        legend_handles = [greatest_surface, least_surface]
+    
         if self.random_heights is not None:
             ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5, 
                             antialiased=False, triangles=triangles)
+            original_surface = mpatches.Patch(color='#27ae60', label='Original Surface')
+            legend_handles = [greatest_surface, original_surface, least_surface]
 
+        plt.legend(handles=legend_handles)
+
+        ax.set_xlabel('\n\nX axis (%d points)' % x_dim, color='white')
+        ax.set_ylabel('\n\nY axis (%d points)' % y_dim, color='white')
+        ax.set_zlabel('\n\nZ axis', color='white')
         ax.set_zlim(min(min_z) - 1.0, max(max_z) + 1.0)
 
+        ax.tick_params(axis='x', colors='white')
+        ax.tick_params(axis='y', colors='white')
+        ax.tick_params(axis='z', colors='white')
+
+        plt.xticks(self.grid_info[0])
+        plt.yticks(self.grid_info[1])
+        ax.set_axis_bgcolor('#34495e')
         plt.show()
 
 
@@ -362,9 +275,6 @@ class Consistency:
                     print str(-vector[row + no_d_constraints]) + \
                         ' <= ' + terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
 
-####################################################################################################
-##################################### COMMAND LINE ARGUMENTS #######################################
-####################################################################################################
 
 def command_line_arguments():
     usage = '''
@@ -450,7 +360,6 @@ def main():
 
     cons = Consistency(options.input_file, random_heights)
     cons.solve_LP_problem()
-    cons.plot_3D_objects_for_2D_case()
 
 
 if __name__ == '__main__':
