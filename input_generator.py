@@ -4,8 +4,11 @@ from parser import Parser
 from sympy import poly
 from utils import Utils
 
+import copy_reg
 import numpy as np
 import sympy as sp
+import multiprocessing
+import types
 
 POLY_TERMS = 10
 POLY_DEGREE = 10
@@ -15,38 +18,70 @@ POLY_MAX_COEF = 40
 RANDOM_LOWER_BOUND = 10
 RANDOM_UPPER_BOUND = 20
 
+def _pickle_method(m):
+    if m.im_self is None:
+        return getattr, (m.im_class, m.im_func.func_name)
+    else:
+        return getattr, (m.im_self, m.im_func.func_name)
+
+copy_reg.pickle(types.MethodType, _pickle_method)
+
 class InputGenerator:
-    
+
     def __init__(self, input_file, n, no_points_per_axis, from_poly=False, eps=20.0):
+        # Path to file in which data will be generated.
         self.input_file = input_file
+
+        # Domain dimension (integer).
         self.n = n
+
+        # Number of points on each of the 'n' axis (list).
         self.no_points_per_axis = [int(i) for i in no_points_per_axis.split(' ')]
-        self.from_poly = from_poly
-        self.random_heights = np.zeros(self.no_points_per_axis)
+
+        # Randomly generated heights to enable automatic testing (n-dim numpy array).
+        self.random_heights = np.zeros(self.no_points_per_axis).reshape(self.no_points_per_axis)
+
+        # Grid information (numpy array).
+        self.grid_info = None
+
+        # Function information (n-dim numpy array of pairs).
+        self.function_info = None
+
+        # Derivative information (n-dim numpy array of tuples).
+        self.derivative_info = None
+
+        # Number of decision variables (integer).
         self.no_vars = np.prod(self.no_points_per_axis)
-        self.grid_info = None 
+
+        # Tolerance for generating random intervals (float).
         self.eps = eps
+
+        # Flag which specifies whether random heights are generated from a polynomial or not.
+        self.from_poly = from_poly
 
 
     def init_random_heights(self):
-        flat_random_heights = np.empty(self.no_vars, dtype=float)
-
         if self.from_poly:
             poly = self.build_random_polynomial()
             grid_indices = Utils.get_grid_indices(self.no_points_per_axis, ignore_last=False)
 
-            for index, grid_index in enumerate(grid_indices):
-                coord = Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
-                flat_random_heights[index] = poly.eval(coord)
-        else:
-            flat_random_heights = (RANDOM_UPPER_BOUND - RANDOM_LOWER_BOUND) * \
-                                   np.random.random_sample((self.no_vars,)) + RANDOM_LOWER_BOUND
+            # Parallelise the initialisation of random values derived from the polynomial.
+            pool = multiprocessing.Pool(multiprocessing.cpu_count())
+            coords = [Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
+                      for grid_index in grid_indices]
 
-        self.random_heights = flat_random_heights.reshape(self.no_points_per_axis)
+            self.random_heights = np.array(pool.map(poly.eval, coords),
+                                           dtype=float).reshape(self.no_points_per_axis)
+            pool.close()
+            pool.join()
+        else:
+            self.random_heights = np.random.uniform(RANDOM_LOWER_BOUND,
+                                                    RANDOM_UPPER_BOUND,
+                                                    self.no_points_per_axis)
 
 
     def build_random_polynomial(self):
-        # Construct list of random coefficients and exponents. 
+        # Construct list of random coefficients and exponents.
         coef_exps_list = []
         for index in range(POLY_TERMS):
             coef = np.random.randint(POLY_MIN_COEF, POLY_MAX_COEF, 1).tolist()
@@ -63,7 +98,7 @@ class InputGenerator:
             poly_term = []
             for index, exponent in enumerate(coef_exps[1:]):
                 poly_term.append(str(poly_vars[index]) + '**' + str(exponent))
-            
+
             poly_terms.append(str(coef) + ' * ' + ' * '.join(poly_term))
 
         return poly(' + '.join(poly_terms), gens=poly_vars)
@@ -90,7 +125,7 @@ class InputGenerator:
                 f_interval = (0.0, 0.0)
                 coord = Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
                 f_value = self.random_heights[grid_index]
-                # Ensure that we generate wide enough intervals that contain all adjacent points. 
+                # Ensure that we generate wide enough intervals that contain all adjacent points.
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
                     grid_indices_neighbours = Utils.get_grid_indices_neighbours(grid_index)
                     min_h, max_h = float('inf'), float('-inf')
@@ -117,9 +152,9 @@ class InputGenerator:
                             next_index = next_grid_indices[end_points[1]]
                             curr_index = next_grid_indices[end_points[0]]
 
-                            next_coord = Utils.convert_grid_index_to_coord(next_index, 
+                            next_coord = Utils.convert_grid_index_to_coord(next_index,
                                 self.grid_info)
-                            curr_coord = Utils.convert_grid_index_to_coord(curr_index, 
+                            curr_coord = Utils.convert_grid_index_to_coord(curr_index,
                                 self.grid_info)
 
                             f_value_next = self.random_heights[next_index]
@@ -146,6 +181,8 @@ class InputGenerator:
         file_descriptor.write('# Array shape: {0}\n'.format(nd_array.shape))
         self.traverse_nd_array(nd_array, file_descriptor, self.n)
 
+        return nd_array
+
 
     def generate_test_file(self):
         with open(self.input_file, 'w+') as f:
@@ -169,12 +206,12 @@ class InputGenerator:
             f.write('\n# Function information (specified as a %d-dimensional array of intervals, '
                     'where an entry is of the form (c-, c+), c- <= c+, and represents the '
                     'constraint for the function value at a particular grid point):\n' % self.n)
-            self.generate_tuples_info(f, is_function_info=True)
+            self.function_info = self.generate_tuples_info(f, is_function_info=True)
 
             # Derivative information.
             f.write('\n# Derivative information (specified as a %d-dimensional array of tuples of '
                     'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), '
                     'ci- <= ci+, and represents the constraints along each partial derivative at a '
                     'particular grid point):\n' % self.n)
-            self.generate_tuples_info(f, is_function_info=False)
+            self.derivative_info = self.generate_tuples_info(f, is_function_info=False)
 

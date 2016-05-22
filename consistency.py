@@ -1,5 +1,5 @@
 #/usr/local/bin/python
- 
+
 from cvxopt import matrix, solvers, sparse, spmatrix
 from input_generator import InputGenerator
 from mpl_toolkits.mplot3d import Axes3D
@@ -17,22 +17,26 @@ import sys
 
 class Consistency:
 
-    def __init__(self, input_file, random_heights, plot_surfaces):
-        # Domain dimension (integer).
-        self.n = Parser.init_dimension(input_file)
-
-        # Grid information (numpy array).
-        self.grid_info = Parser.init_grid_info(input_file, self.n)
-
-        # Number of points on each of the 'n' axis (list).
-        self.no_points_per_axis = Parser.init_no_points_per_axis(self.grid_info)
-
-        # Function information (n-dim numpy array of pairs).
-        self.function_info = Parser.init_function_info(input_file, self.n, self.no_points_per_axis)
-        
-        # Derivative information (n-dim numpy array of tuples).
-        self.derivative_info = Parser.init_derivative_info(input_file, self.n,
+    def __init__(self, input_file, plot_surfaces, input_generator):
+        if input_generator is not None:
+            self.n = input_generator.n
+            self.grid_info = input_generator.grid_info
+            self.no_points_per_axis = input_generator.no_points_per_axis
+            self.function_info = input_generator.function_info
+            self.derivative_info = input_generator.derivative_info
+            self.random_heights = input_generator.random_heights
+        else:
+            self.n = Parser.init_dimension(input_file)
+            self.grid_info = Parser.init_grid_info(input_file, self.n)
+            self.no_points_per_axis = Parser.init_no_points_per_axis(self.grid_info)
+            self.function_info = Parser.init_function_info(input_file, self.n,
                                                            self.no_points_per_axis)
+            self.derivative_info = Parser.init_derivative_info(input_file, self.n,
+                                                               self.no_points_per_axis)
+            self.random_heights = None
+
+        # Number of decision variables (integer).
+        self.no_vars = np.prod(self.no_points_per_axis)
 
         # Minimum heights for least witness of consistency (n-dim numpy array).
         self.min_heights = np.zeros(self.no_points_per_axis)
@@ -40,25 +44,19 @@ class Consistency:
         # Maximum heights for greatest witness of consistency (n-dim numpy array).
         self.max_heights = np.zeros(self.no_points_per_axis)
 
-        # Number of decision variables (integer).
-        self.no_vars = np.prod(self.no_points_per_axis)
-
-        # Randomly generated heights to enable automatic testing (n-dim numpy array).
-        self.random_heights = random_heights
-
         # Flag which specifies whether the surfaces will be plotted for the 2D case.
         self.plot_surfaces = plot_surfaces
 
 
     def solve_LP_problem(self):
         (f_coef_matrix, f_column_vector) = self.build_function_coef_matrix_and_column_vector()
-        (d_coef_matrix, d_column_vector) = self.build_derivative_coef_matrix_and_column_vector()        
-        
+        (d_coef_matrix, d_column_vector) = self.build_derivative_coef_matrix_and_column_vector()
+
         # Solve the LP problem by combining constraints for both function and derivative info.
         objective_function_vector = matrix(list(itertools.repeat(1.0, self.no_vars)))
-        coef_matrix = matrix([f_coef_matrix, d_coef_matrix])
+        coef_matrix = sparse([f_coef_matrix, d_coef_matrix])
         column_vector = matrix([f_column_vector, d_column_vector])
-        
+
         min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
         is_consistent = min_sol['x'] is not None
 
@@ -88,7 +86,7 @@ class Consistency:
         # Construct bounds of the type: c_ij- <= h_st <= c_ij+, s = i,i+1, t = j,j+1.
         l_b_constraints = np.empty(self.no_points_per_axis)
         u_b_constraints = np.empty(self.no_points_per_axis)
-        
+
         l_b_constraints.fill(np.float('-inf'))
         u_b_constraints.fill(np.float('inf'))
 
@@ -111,13 +109,13 @@ class Consistency:
         ones = list(itertools.repeat(1.0, self.no_vars))
         ones_matrix = spmatrix(ones, range(self.no_vars), range(self.no_vars))
         minus_ones_matrix = -spmatrix(ones, range(self.no_vars), range(self.no_vars))
-        
+
         coef_matrix = sparse([ones_matrix, minus_ones_matrix])
 
         (l_b_constraints, u_b_constraints) = self.build_constraints_from_function_info()
         flat_l_b_constraints = matrix(l_b_constraints.flatten())
         flat_u_b_constraints = matrix(u_b_constraints.flatten())
-        
+
         # l <= x constraint will be rewritten as -x <= -l.
         column_vector = matrix([flat_u_b_constraints, -flat_l_b_constraints])
 
@@ -167,7 +165,7 @@ class Consistency:
 
     def build_derivative_coef_matrix_and_column_vector(self):
         block_heights = Utils.calculate_block_heights(self.no_points_per_axis)
-        adjacent_offsets = Utils.calculate_adjacent_sub_block_offsets(self.no_vars, 
+        adjacent_offsets = Utils.calculate_adjacent_sub_block_offsets(self.no_vars,
                                                                       self.no_points_per_axis)
         matrices_list = []
 
@@ -180,7 +178,7 @@ class Consistency:
 
         upper_half_matrix = sparse(matrices_list)
         coef_matrix = sparse([upper_half_matrix, -upper_half_matrix])
-        
+
         (l_b_constraints, u_b_constraints) = self.build_constraints_from_derivative_info()
         flat_l_b_constraints = matrix(l_b_constraints)
         flat_u_b_constraints = matrix(u_b_constraints)
@@ -208,23 +206,23 @@ class Consistency:
         ax = fig.gca(projection='3d')
         ax.set_axis_bgcolor('#34495e')
 
-        # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in 
+        # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in
         # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
         x_dim = self.no_points_per_axis[0]
         y_dim = self.no_points_per_axis[1]
         triangles = Utils.get_triangulation(x_dim, y_dim)
 
-        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=0.5, antialiased=False, 
+        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=0.5, antialiased=False,
                         triangles=triangles)
-        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=0.5, antialiased=False, 
+        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=0.5, antialiased=False,
                         triangles=triangles)
 
         least_surface = mpatches.Patch(color='#3498db', label='Least Surface')
         greatest_surface = mpatches.Patch(color='#e74c3c', label='Greatest Surface')
         legend_handles = [greatest_surface, least_surface]
-    
+
         if self.random_heights is not None:
-            ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5, 
+            ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5,
                             antialiased=False, triangles=triangles)
             original_surface = mpatches.Patch(color='#27ae60', label='Original Surface')
             legend_handles = [greatest_surface, original_surface, least_surface]
@@ -275,7 +273,7 @@ class Consistency:
                     print str(-vector[row + self.no_vars]) + \
                         ' <= ' + terms[0] + ' <= ' + str(vector[row])
             else:
-                if row < no_rows - no_d_constraints: 
+                if row < no_rows - no_d_constraints:
                     print str(-vector[row + no_d_constraints]) + \
                         ' <= ' + terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
 
@@ -285,9 +283,9 @@ def command_line_arguments():
 
     consistency.py:
 
-    Purpose: this script will check if the pair of step functions (f, g), where f : U -> IR and 
-    g : U -> IR^n (the function and derivative information, respectively) are consistent, i.e. if 
-    there exists a third map 'h' that is approximated by the first component of the pair ('f') and 
+    Purpose: this script will check if the pair of step functions (f, g), where f : U -> IR and
+    g : U -> IR^n (the function and derivative information, respectively) are consistent, i.e. if
+    there exists a third map 'h' that is approximated by the first component of the pair ('f') and
     whose derivative is approximated by the second component of the pair ('g'). Furthermore, if
     such a map exists, the script will return the least and greatest such maps, that have the added
     property of being piece-wise linear.
@@ -314,9 +312,9 @@ def command_line_arguments():
     parser = OptionParser(usage=usage)
     parser.add_option('-i', '--input-file', dest='input_file', type='string',
                       help='Specifies the path to the input file.')
-    parser.add_option('-d', '--dimension', dest='dimension', type='int',    
+    parser.add_option('-d', '--dimension', dest='dimension', type='int',
                       help='Specifies the dimension of the function domain.')
-    parser.add_option('-p', '--no-points-per-axis', dest='no_points_per_axis', type='string', 
+    parser.add_option('-p', '--no-points-per-axis', dest='no_points_per_axis', type='string',
                       help='Specifies the number of points along each axis, as a string of'
                            'space-separated values. The number of points on each dimension will'
                            'divide each axis in equal segments and thus create the required grid.')
@@ -328,9 +326,7 @@ def command_line_arguments():
                       help='Specifies whether surfaces will be plotted for the 2D case.')
     parser.add_option('-e', '--epsilon', dest='epsilon', type='float',
                       help='Specifies the tolerance value for generating random intervals for '
-                            'function and derivative information, respectively. When set to 0, '
-                            'both the least, greatest and original function information will '
-                            'coincide.')
+                            'function and derivative information, respectively.')
 
     return parser.parse_args()
 
@@ -353,18 +349,17 @@ def validate_options(options):
 def main():
     (options, args) = command_line_arguments()
     validate_options(options)
-    random_heights = None
+    input_generator = None
 
-    if options.generate_input: 
-        input_gen = InputGenerator(options.input_file,
-                                   options.dimension,
-                                   options.no_points_per_axis,
-                                   options.from_poly,
-                                   options.epsilon)
-        input_gen.generate_test_file()
-        random_heights = input_gen.random_heights
+    if options.generate_input:
+        input_generator = InputGenerator(options.input_file,
+                                         options.dimension,
+                                         options.no_points_per_axis,
+                                         options.from_poly,
+                                         options.epsilon)
+        input_generator.generate_test_file()
 
-    cons = Consistency(options.input_file, random_heights, options.plot_surfaces)
+    cons = Consistency(options.input_file, options.plot_surfaces, input_generator)
     cons.solve_LP_problem()
 
 
