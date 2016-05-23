@@ -11,9 +11,10 @@ import multiprocessing
 import types
 
 POLY_TERMS = 10
-POLY_DEGREE = 10
+POLY_MAX_DEGREE = 10
 POLY_MIN_COEF = -40
 POLY_MAX_COEF = 40
+OFFSET = 0.1
 
 RANDOM_LOWER_BOUND = 10
 RANDOM_UPPER_BOUND = 20
@@ -28,7 +29,10 @@ copy_reg.pickle(types.MethodType, _pickle_method)
 
 class InputGenerator:
 
-    def __init__(self, input_file, n, no_points_per_axis, from_poly=False, eps=20.0):
+    def __init__(self, input_file, is_cons_input, n, no_points_per_axis, from_poly=False, eps=0.0):
+        # Flag which specifies whether consistent input will be generated or not.
+        self.is_cons_input = is_cons_input
+
         # Path to file in which data will be generated.
         self.input_file = input_file
 
@@ -85,7 +89,7 @@ class InputGenerator:
         coef_exps_list = []
         for index in range(POLY_TERMS):
             coef = np.random.randint(POLY_MIN_COEF, POLY_MAX_COEF, 1).tolist()
-            exps = np.random.randint(0, POLY_DEGREE, self.n).tolist()
+            exps = np.random.randint(0, POLY_MAX_DEGREE, self.n).tolist()
             coef_exps_list.append(tuple(coef + exps))
 
         # Construct polynomial variables as x_1, x_2, ..., x_n.
@@ -116,9 +120,20 @@ class InputGenerator:
 
 
     def generate_flat_info(self, is_function_info):
-        # Reverse engineer the LP algorithm to construct input that guarantees consistency.
+        # Reverse engineer the LP algorithm to construct either consistent or inconsistent input.
         flat_info = []
         grid_indices = Utils.get_grid_indices(self.no_points_per_axis, ignore_last=False)
+
+        # In order to generate inconsistent input, change a random partial derivative at a random
+        # grid point so that the derivative is always strictly greater than the gradient within the
+        # corresponding hyper-rectangle. This is the minimal change we can make to get inconsistent
+        # input.
+        if not self.is_cons_input and self.function_info is not None:
+            interior_grid_indices = Utils.get_grid_indices(self.no_points_per_axis,
+                                                           ignore_last=True)
+            random_index_in_list = np.random.randint(0, len(interior_grid_indices))
+            random_interior_grid_index = interior_grid_indices[random_index_in_list]
+            random_partial_derivative = np.random.randint(0, self.n)
 
         for grid_index in grid_indices:
             if is_function_info:
@@ -134,9 +149,19 @@ class InputGenerator:
                         f_value_neighbour = self.random_heights[next_grid_index]
                         min_h, max_h = min(min_h, f_value_neighbour), max(max_h, f_value_neighbour)
 
-                    f_interval = (min_h - self.eps, max_h + self.eps)
+                    if self.is_cons_input:
+                        # To guarantee consistency, the interval for function information at this
+                        # particulat grid point must include at least [min_h, max_h].
+                        # Use the epsilon to vary this interval and to allow a greater distance
+                        # between the minimal and maximal surfaces.
+                        f_interval = (min_h - self.eps, max_h + self.eps)
+                    else:
+                        # For inconsistent input, simply take the least box containing the generated
+                        # heights.
+                        f_interval = (min_h, max_h)
 
                 flat_info.append(f_interval)
+
             else:
                 d_values = [(0.0, 0.0)] * self.n
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
@@ -164,7 +189,20 @@ class InputGenerator:
 
                             min_b, max_b = min(min_b, gradient), max(max_b, gradient)
 
-                        d_values[ith_partial] = (min_b - self.eps, max_b + self.eps)
+                        if self.is_cons_input:
+                            d_values[ith_partial] = (min_b - self.eps, max_b + self.eps)
+                        else:
+                            # Make the minimal change to guarantee inconsistent input.
+                            if random_interior_grid_index == grid_index and \
+                               random_partial_derivative == ith_partial:
+                                f_lower = self.function_info[random_interior_grid_index][0]
+                                f_upper = self.function_info[random_interior_grid_index][1]
+                                max_gradient = abs(f_upper - f_lower) / grid_diff
+
+                                inconsistent_interval = (max_gradient + OFFSET, 3 * max_gradient)
+                                d_values[ith_partial] = inconsistent_interval
+                            else:
+                                d_values[ith_partial] = (min_b, max_b)
 
                 flat_info.append(tuple(d_values))
 

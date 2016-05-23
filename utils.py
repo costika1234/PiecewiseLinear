@@ -1,12 +1,27 @@
 #/usr/local/bin/python
- 
+
 from cvxopt import spmatrix
 from operator import mul
 
+import contextlib
 import itertools
 import numpy as np
+import sys
+
+class DummyFile(object):
+    def write(self, x):
+        pass
 
 class Utils:
+
+    @staticmethod
+    @contextlib.contextmanager
+    def nostdout():
+        save_stdout = sys.stdout
+        sys.stdout = DummyFile()
+        yield
+        sys.stdout = save_stdout
+
 
     @staticmethod
     def get_grid_indices(no_points_per_axis, ignore_last):
@@ -84,7 +99,7 @@ class Utils:
                 if j + step < no_cols:
                     result[index][j + step][0] = result[index][j][0] + offset
                     result[index][j + step][1] = result[index][j][1] + offset
-            
+
         return result
 
 
@@ -97,7 +112,7 @@ class Utils:
         return [(str(dimension + 1), tuple_dtype) for dimension in range(dimension)]
 
 
-    @staticmethod  
+    @staticmethod
     def calculate_block_heights(no_points_per_axis):
         dimensions_prod = reduce(mul, no_points_per_axis)
         return [dimensions_prod / no_points_per_axis[i] * (no_points_per_axis[i] - 1) \
@@ -156,7 +171,7 @@ class Utils:
             for index in range(block_height):
                 if index % (block_height / no_sub_blocks) == 0 and index != 0:
                     n = n + offset
-            
+
                 column_range_minus_ones += [n]
                 n = n + 1
 

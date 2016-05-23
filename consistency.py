@@ -296,12 +296,14 @@ def command_line_arguments():
 
             python consistency.py --input_file <path_to_file>
 
-        * Automatic mode which generates consistent pairs (f, g) randomly and then runs the
-          algorithm to check that consistency holds. One can specify the optional '--from-poly'
-          flag to indicate that the function value is obtained from a piece-wise linear polynomial.
+        * Automatic mode which generates random consistent/inconsistent pairs (f, g) and then runs
+          the algorithm to determine whether consistency holds or not. One can specify the optional
+          '--from-poly' flag to indicate that the function value is obtained from a piece-wise
+          linear polynomial. In additional, a tolerance value ('epsilon') can be specified in order
+          to control the distance between the minimal and maximal surfaces, respectively.
 
             python consistency.py --input_file <path_to_file>
-                                  --generate-input
+                                  [--gen-cons-input | --gen-incons-input]
                                   --dimension <domain_dimension>
                                   --no-points-per-axis <no_points_per_axis> (e.g. '2 3 4')
                                   --epsilon <epsilon>
@@ -315,24 +317,30 @@ def command_line_arguments():
     parser.add_option('-d', '--dimension', dest='dimension', type='int',
                       help='Specifies the dimension of the function domain.')
     parser.add_option('-p', '--no-points-per-axis', dest='no_points_per_axis', type='string',
-                      help='Specifies the number of points along each axis, as a string of'
-                           'space-separated values. The number of points on each dimension will'
+                      help='Specifies the number of points along each axis, as a string of '
+                           'space-separated values. The number of points on each dimension will '
                            'divide each axis in equal segments and thus create the required grid.')
-    parser.add_option('-g', '--generate-input', dest='generate_input', action='store_true',
-                      help='Specifies whether automatic input is generated to test consistency.')
+    parser.add_option('', '--gen-cons-input', dest='gen_cons_input', action='store_true',
+                      help='Specifies whether randomly consistent input is generated.')
+    parser.add_option('', '--gen-incons-input', dest='gen_incons_input', action='store_true',
+                      help='Specifies whether randomly inconsistent input is generated.')
     parser.add_option('', '--from-poly', dest='from_poly', action='store_true',
                       help='Specifies whether automatic input is generated from a polynomial.')
     parser.add_option('', '--plot', dest='plot_surfaces', action='store_true',
                       help='Specifies whether surfaces will be plotted for the 2D case.')
     parser.add_option('-e', '--epsilon', dest='epsilon', type='float',
                       help='Specifies the tolerance value for generating random intervals for '
-                            'function and derivative information, respectively.')
+                           'function and derivative information, respectively.')
 
     return parser.parse_args()
 
 
 def validate_options(options):
-    if options.generate_input:
+    if options.gen_cons_input and options.gen_incons_input:
+        raise RuntimeError('Mutually exclusive options specified. Should either set generate '
+                           'consistent input or generate inconsistent input, or none.')
+
+    if options.gen_cons_input or options.gen_incons_input:
         if options.dimension is None or \
            options.no_points_per_axis is None or \
            options.epsilon is None:
@@ -342,8 +350,12 @@ def validate_options(options):
         if options.dimension < 2:
             raise RuntimeError('Invalid domain dimension. Should be greater than or equal to 2.')
 
-        if len(options.no_points_per_axis.split(' ')) != options.dimension:
-            raise RuntimeError('Invalid number of points per axis.')
+        no_points_per_axis_list = [int(no) for no in options.no_points_per_axis.split(' ')]
+        if len(no_points_per_axis_list) != options.dimension or \
+           not all(no >= 2 for no in no_points_per_axis_list):
+            raise RuntimeError('Invalid number of points per axis. The list must have as many '
+                               'elements as the number of dimensions and each axis must contain at '
+                               'least 2 points.')
 
 
 def main():
@@ -351,8 +363,9 @@ def main():
     validate_options(options)
     input_generator = None
 
-    if options.generate_input:
+    if options.gen_cons_input or options.gen_incons_input:
         input_generator = InputGenerator(options.input_file,
+                                         options.gen_cons_input is not None,
                                          options.dimension,
                                          options.no_points_per_axis,
                                          options.from_poly,
