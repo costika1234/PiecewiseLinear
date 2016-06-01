@@ -17,7 +17,7 @@ import sys
 
 class Consistency:
 
-    def __init__(self, input_file, plot_surfaces, input_generator):
+    def __init__(self, input_file, plot_surfaces, input_generator, verbose=False):
         if input_generator is not None:
             self.n = input_generator.n
             self.grid_info = input_generator.grid_info
@@ -47,6 +47,9 @@ class Consistency:
         # Flag which specifies whether the surfaces will be plotted for the 2D case.
         self.plot_surfaces = plot_surfaces
 
+        # Flag for verbose logging.
+        self.verbose = verbose
+
 
     def solve_LP_problem(self):
         (f_coef_matrix, f_column_vector) = self.build_function_coef_matrix_and_column_vector()
@@ -61,7 +64,8 @@ class Consistency:
         is_consistent = min_sol['x'] is not None
 
         # Print the LP problem for debugging purposes.
-        self.display_LP_problem(coef_matrix, column_vector)
+        if self.verbose:
+            self.display_LP_problem(coef_matrix, column_vector)
 
         if is_consistent:
             self.min_heights = np.array(min_sol['x']).reshape(self.no_points_per_axis)
@@ -335,6 +339,8 @@ def command_line_arguments():
                       dest='rand_points_axis', action='store_true', default=False,
                       help='Specifies whether the points per axis are generated randomly. By '
                            'default, points are equally spaced on each axis.')
+    parser.add_option('', '--verbose', dest='verbose', action='store_true', default=False,
+                      help='Specifies whether the LP problem will be logged to console.')
 
     return parser.parse_args()
 
@@ -377,7 +383,7 @@ def main():
                                          options.epsilon)
         input_generator.generate_test_file()
 
-    cons = Consistency(options.input_file, options.plot_surfaces, input_generator)
+    cons = Consistency(options.input_file, options.plot_surfaces, input_generator, options.verbose)
     cons.solve_LP_problem()
 
 
