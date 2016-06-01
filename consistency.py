@@ -53,37 +53,31 @@ class Consistency:
         (d_coef_matrix, d_column_vector) = self.build_derivative_coef_matrix_and_column_vector()
 
         # Solve the LP problem by combining constraints for both function and derivative info.
+        objective_function_vector = matrix(list(itertools.repeat(1.0, self.no_vars)))
+        coef_matrix = sparse([f_coef_matrix, d_coef_matrix])
+        column_vector = matrix([f_column_vector, d_column_vector])
 
-        for index in range(self.no_vars):
-            print index
-            obj_func_list = list(itertools.repeat(0.0, self.no_vars))
-            obj_func_list[index] = 1.0
+        min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
+        is_consistent = min_sol['x'] is not None
 
-            objective_function_vector = matrix(obj_func_list)
-            coef_matrix = sparse([f_coef_matrix, d_coef_matrix])
-            column_vector = matrix([f_column_vector, d_column_vector])
+        # Print the LP problem for debugging purposes.
+        self.display_LP_problem(coef_matrix, column_vector)
 
-            min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
-            is_consistent = min_sol['x'] is not None
+        if is_consistent:
+            self.min_heights = np.array(min_sol['x']).reshape(self.no_points_per_axis)
+            print np.around(self.min_heights, decimals=2)
 
-            # Print the LP problem for debugging purposes.
-            self.display_LP_problem(coef_matrix, column_vector)
+            # Since consistency has been established, solve the converse LP problem to get the
+            # maximal bounding surface.
+            max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
+            self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
+            print np.around(self.max_heights, decimals=2)
 
-            if is_consistent:
-                self.min_heights = np.array(min_sol['x']).reshape(self.no_points_per_axis)
-                print np.around(self.min_heights, decimals=2)
+            if self.plot_surfaces:
+                self.plot_3D_objects_for_2D_case()
 
-                # Since consistency has been established, solve the converse LP problem to get the
-                # maximal bounding surface.
-                max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
-                self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
-                print np.around(self.max_heights, decimals=2)
-
-                if self.plot_surfaces:
-                    self.plot_3D_objects_for_2D_case()
-
-            else:
-                print 'No witness for consistency found.'
+        else:
+            print 'No witness for consistency found.'
 
         return is_consistent
 
@@ -337,6 +331,10 @@ def command_line_arguments():
     parser.add_option('-e', '--epsilon', dest='epsilon', type='float',
                       help='Specifies the tolerance value for generating random intervals for '
                            'function and derivative information, respectively.')
+    parser.add_option('', '--rand-points-axis',
+                      dest='rand_points_axis', action='store_true', default=False,
+                      help='Specifies whether the points per axis are generated randomly. By '
+                           'default, points are equally spaced on each axis.')
 
     return parser.parse_args()
 
@@ -374,6 +372,7 @@ def main():
                                          options.gen_cons_input is not None,
                                          options.dimension,
                                          options.no_points_per_axis,
+                                         options.rand_points_axis,
                                          options.from_poly,
                                          options.epsilon)
         input_generator.generate_test_file()

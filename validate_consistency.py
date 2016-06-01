@@ -40,8 +40,9 @@ class ConsistencyValidator:
                                                self.is_input_consistent,
                                                dimension,
                                                no_points_per_axis,
-                                               from_poly,
-                                               epsilon)
+                                               rand_points_axis=True,
+                                               from_poly=from_poly,
+                                               eps=epsilon)
                     input_gen.generate_test_file()
 
                     # Silence the print statements to stdout.

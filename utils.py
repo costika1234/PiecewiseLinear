@@ -192,3 +192,20 @@ class Utils:
 
         return triangles
 
+
+    @staticmethod
+    def generate_random_points_per_axis(no_points):
+        random_points_list = [0.0]
+
+        if no_points > 2:
+            eq_spaced_points_list = np.linspace(0.0, 1.0, no_points)
+            offset = 1.0 / (4 * (no_points - 1))
+
+            for index in range(no_points - 2):
+                point = eq_spaced_points_list[index + 1]
+                random_points_list.append(np.random.uniform(point - offset, point + offset))
+
+        random_points_list.append(1.0)
+
+        return random_points_list
+

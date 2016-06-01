@@ -29,7 +29,8 @@ copy_reg.pickle(types.MethodType, _pickle_method)
 
 class InputGenerator:
 
-    def __init__(self, input_file, is_cons_input, n, no_points_per_axis, from_poly=False, eps=0.0):
+    def __init__(self, input_file, is_cons_input, n, no_points_per_axis, rand_points_axis=False,
+                 from_poly=False, eps=0.0):
         # Flag which specifies whether consistent input will be generated or not.
         self.is_cons_input = is_cons_input
 
@@ -41,6 +42,9 @@ class InputGenerator:
 
         # Number of points on each of the 'n' axis (list).
         self.no_points_per_axis = [int(i) for i in no_points_per_axis.split(' ')]
+
+        # Specifies whether the points per each axis are generated randomly or not.
+        self.rand_points_axis = rand_points_axis
 
         # Randomly generated heights to enable automatic testing (n-dim numpy array).
         self.random_heights = np.zeros(self.no_points_per_axis).reshape(self.no_points_per_axis)
@@ -231,8 +235,14 @@ class InputGenerator:
             f.write('# Grid information (each of the %d lines specify divisions on the domain axis,'
                     ' in strictly increasing order. The endpoints will therefore specify the '
                     'constraints for the function domain):\n' % self.n)
+
             for no_points in self.no_points_per_axis:
-                np.savetxt(f, np.linspace(0.0, 1.0, no_points), newline=' ', fmt='%s')
+                if self.rand_points_axis:
+                    points_list = Utils.generate_random_points_per_axis(no_points)
+                else:
+                    points_list = np.linspace(0.0, 1.0, no_points)
+
+                np.savetxt(f, points_list, newline=' ', fmt='%s')
                 f.write('\n')
 
         # Initialize random values for heights (either from polynomial, or randomly chosen).
