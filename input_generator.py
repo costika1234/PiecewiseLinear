@@ -142,7 +142,6 @@ class InputGenerator:
         for grid_index in grid_indices:
             if is_function_info:
                 f_interval = (0.0, 0.0)
-                coord = Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
                 f_value = self.random_heights[grid_index]
                 # Ensure that we generate wide enough intervals that contain all adjacent points.
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
