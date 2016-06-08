@@ -129,7 +129,7 @@ class Consistency:
     def build_constraints_from_derivative_info(self):
         # Construct bounds of the type: b_ij_1- <= (h_i+1,j - h_ij) / (p_i+1 - p_i) <= b_ij_1+.
         indices_allowing_neighbours = Utils.get_grid_indices(self.no_points_per_axis, True)
-        partial_derivatives_end_points = Utils.get_partial_derivatives_end_points(self.n)
+        sub_hyper_rect_end_points = Utils.get_sub_hyper_rect_end_points(self.n)
 
         l_b_constraints = []
         u_b_constraints = []
@@ -148,7 +148,7 @@ class Consistency:
             for grid_index in indices_allowing_neighbours:
                 next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
 
-                for end_points in partial_derivatives_end_points[ith_partial]:
+                for end_points in sub_hyper_rect_end_points[ith_partial]:
                     next_index = next_grid_indices[end_points[1]]
                     curr_index = next_grid_indices[end_points[0]]
 

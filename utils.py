@@ -62,7 +62,7 @@ class Utils:
 
 
     @staticmethod
-    def get_grid_index_neighbour_for_axis(grid_index, axis):
+    def get_next_grid_index(grid_index, axis):
         result = list(grid_index)
         result[axis] = result[axis] + 1
         return tuple(result)
@@ -81,7 +81,7 @@ class Utils:
 
 
     @staticmethod
-    def get_partial_derivatives_end_points(dimension):
+    def get_sub_hyper_rect_end_points(dimension):
         no_cols = 2**(dimension - 1)
         result = np.zeros((dimension, no_cols), dtype=('int, int'))
 

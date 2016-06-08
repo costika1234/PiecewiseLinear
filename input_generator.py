@@ -168,26 +168,26 @@ class InputGenerator:
             else:
                 d_values = [(0.0, 0.0)] * self.n
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
-                    # Along each partial derivative and for all possible triangulations, compute
-                    # the minimum and maximum gradients based on the given heights.
+                    sub_hyper_rect_end_points = Utils.get_sub_hyper_rect_end_points(self.n)
+
+                    # Along each partial derivative and for all parallel edges within the grid,
+                    # compute the minimum and maximum gradients based on the given heights.
                     for ith_partial in range(self.n):
-                        partial_derivatives_end_points = Utils.get_partial_derivatives_end_points(
-                            self.n)
+                        # First compute the grid difference.
+                        next_index = Utils.get_next_grid_index(grid_index, ith_partial)
+                        next_coord = Utils.convert_grid_index_to_coord(next_index, self.grid_info)
+                        curr_coord = Utils.convert_grid_index_to_coord(grid_index, self.grid_info)
+                        grid_diff  = next_coord[ith_partial] - curr_coord[ith_partial]
+
                         next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
                         min_b, max_b = float('inf'), float('-inf')
 
-                        for end_points in partial_derivatives_end_points[ith_partial]:
+                        for end_points in sub_hyper_rect_end_points[ith_partial]:
                             next_index = next_grid_indices[end_points[1]]
                             curr_index = next_grid_indices[end_points[0]]
 
-                            next_coord = Utils.convert_grid_index_to_coord(next_index,
-                                self.grid_info)
-                            curr_coord = Utils.convert_grid_index_to_coord(curr_index,
-                                self.grid_info)
-
                             f_value_next = self.random_heights[next_index]
                             f_value_curr = self.random_heights[curr_index]
-                            grid_diff = next_coord[ith_partial] - curr_coord[ith_partial]
                             gradient = (f_value_next - f_value_curr) / grid_diff
 
                             min_b, max_b = min(min_b, gradient), max(max_b, gradient)
