@@ -81,7 +81,7 @@ class Utils:
 
 
     @staticmethod
-    def get_partial_derivatives_end_points(dimension):
+    def get_sub_hyper_rect_end_points(dimension):
         no_cols = 2**(dimension - 1)
         result = np.zeros((dimension, no_cols), dtype=('int, int'))
 
