@@ -62,7 +62,7 @@ class Utils:
 
 
     @staticmethod
-    def get_grid_index_neighbour_for_axis(grid_index, axis):
+    def get_next_grid_index(grid_index, axis):
         result = list(grid_index)
         result[axis] = result[axis] + 1
         return tuple(result)

@@ -168,44 +168,28 @@ class InputGenerator:
             else:
                 d_values = [(0.0, 0.0)] * self.n
                 if not Utils.is_border_index(grid_index, self.no_points_per_axis):
-                    # Along each partial derivative and for all possible triangulations, compute
-                    # the minimum and maximum gradients based on the given heights.
-                    for ith_partial in range(self.n):
-                        partial_derivatives_end_points = Utils.get_partial_derivatives_end_points(
-                            self.n)
-                        next_grid_indices = Utils.get_grid_indices_neighbours(grid_index)
-                        min_b, max_b = float('inf'), float('-inf')
+                    # For each sub-hyper-rectangle in the grid and for each partial derivative,
+                    # evaluate the maximum slope/gradient using the rectangular box computed
+                    # previously. Then a consistent interval for the partial derivative can be
+                    # simply: (-max_gradient, max_gradient), which is the minimal such interval.
+                    for axis in range(self.n):
+                        curr_index = grid_index
+                        next_index = Utils.get_next_grid_index(curr_index, axis)
 
-                        for end_points in partial_derivatives_end_points[ith_partial]:
-                            next_index = next_grid_indices[end_points[1]]
-                            curr_index = next_grid_indices[end_points[0]]
+                        curr_coord = Utils.convert_grid_index_to_coord(curr_index, self.grid_info)
+                        next_coord = Utils.convert_grid_index_to_coord(next_index, self.grid_info)
 
-                            next_coord = Utils.convert_grid_index_to_coord(next_index,
-                                self.grid_info)
-                            curr_coord = Utils.convert_grid_index_to_coord(curr_index,
-                                self.grid_info)
+                        grid_diff = next_coord[axis] - curr_coord[axis]
+                        f_lower = self.function_info[grid_index][0]
+                        f_upper = self.function_info[grid_index][1]
+                        max_gradient = abs(f_upper - f_lower) / grid_diff
 
-                            f_value_next = self.random_heights[next_index]
-                            f_value_curr = self.random_heights[curr_index]
-                            grid_diff = next_coord[ith_partial] - curr_coord[ith_partial]
-                            gradient = (f_value_next - f_value_curr) / grid_diff
-
-                            min_b, max_b = min(min_b, gradient), max(max_b, gradient)
-
-                        if self.is_cons_input:
-                            d_values[ith_partial] = (min_b - self.eps, max_b + self.eps)
-                        else:
+                        if not self.is_cons_input and random_partial_derivative == axis and \
+                           random_interior_grid_index == grid_index:
                             # Make the minimal change to guarantee inconsistent input.
-                            if random_interior_grid_index == grid_index and \
-                               random_partial_derivative == ith_partial:
-                                f_lower = self.function_info[random_interior_grid_index][0]
-                                f_upper = self.function_info[random_interior_grid_index][1]
-                                max_gradient = abs(f_upper - f_lower) / grid_diff
-
-                                inconsistent_interval = (max_gradient + OFFSET, 3 * max_gradient)
-                                d_values[ith_partial] = inconsistent_interval
-                            else:
-                                d_values[ith_partial] = (min_b, max_b)
+                            d_values[axis] = (max_gradient + OFFSET, max_gradient + 2 * OFFSET)
+                        else:
+                            d_values[axis] = (-1.0 * max_gradient, max_gradient)
 
                 flat_info.append(tuple(d_values))
 
