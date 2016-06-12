@@ -18,7 +18,7 @@ import sys
 class Consistency:
 
     def __init__(self, input_file, input_generator, plot_surfaces=True,
-                 plot_random_heights=True, verbose=False, path_to_plot=None):
+                 plot_random_heights=True, verbose=False):
         if input_generator is not None:
             self.n = input_generator.n
             self.grid_info = input_generator.grid_info
@@ -45,9 +45,6 @@ class Consistency:
 
         # Maximum heights for greatest witness of consistency (n-dim numpy array).
         self.max_heights = np.zeros(self.no_points_per_axis)
-
-        # Specifies the path to which the plots will be saved (if 2D case and consistent input).
-        self.path_to_plot = path_to_plot
 
         # Flag which specifies whether the surfaces will be plotted for the 2D case.
         self.plot_surfaces = plot_surfaces
@@ -217,7 +214,7 @@ class Consistency:
         fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
         ax.set_axis_bgcolor('#34495e')
-        ax.view_init(elev=30, azim=-30)
+        ax.view_init(elev=20, azim=-30)
 
         # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in
         # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
@@ -354,8 +351,6 @@ def command_line_arguments():
                            'default, points are equally spaced on each axis.')
     parser.add_option('', '--verbose', dest='verbose', action='store_true', default=False,
                       help='Specifies whether the LP problem will be logged to console.')
-    parser.add_option('', '--path', dest='verbose', action='store_true', default=False,
-                      help='Specifies whether the LP problem will be logged to console.')
 
     return parser.parse_args()
 
@@ -402,8 +397,7 @@ def main():
                        input_generator,
                        options.plot_surfaces,
                        options.plot_rand_heights,
-                       options.verbose,
-                       path_to_plot=None)
+                       options.verbose)
 
     # Run the LP algorithm to decide consistency.
     cons.solve_LP_problem()
