@@ -1,5 +1,5 @@
 #/usr/local/bin/python
- 
+
 from utils import Utils
 
 import numpy as np
@@ -12,6 +12,7 @@ GRID_INFO_STRING       = r'# Grid information'
 POLYNOMIAL_INFO_STRING = r'# Polynomial information'
 FUNCTION_INFO_STRING   = r'# Function information'
 DERIVATIVE_INFO_STRING = r'# Derivative information'
+RANDOM_HEIGHTS_STRING  = r'# Random heights'
 
 FLOAT_NUMBER_REGEX = r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'
 DIMENSION_REGEX    = r'# Dimension: (\d+)'
@@ -37,6 +38,22 @@ class Parser:
     @staticmethod
     def init_no_points_per_axis(grid_info):
         return [len(grid_info[axis]) for axis in range(len(grid_info))]
+
+
+    @staticmethod
+    def init_random_heights(input_file, dimension, no_points_per_axis):
+        flat_random_heights = []
+        with open(input_file, 'r') as f:
+            for line in f:
+                if line.startswith(RANDOM_HEIGHTS_STRING):
+                    for line in f:
+                        if line.startswith(FUNCTION_INFO_STRING):
+                            break
+                        if line.startswith('#') or line.startswith('\n'):
+                            continue
+                        flat_random_heights.extend(line.rstrip().split(' '))
+
+        return np.array(flat_random_heights, dtype=float).reshape(no_points_per_axis)
 
 
     @staticmethod
@@ -68,7 +85,7 @@ class Parser:
     @staticmethod
     def build_tuples_regex_for_dimension(d):
         return r'\((?P<' + LOWER_BOUND + r'_' + str(d) + r'>' + FLOAT_NUMBER_REGEX + r'),\s*' + \
-                 r'(?P<' + UPPER_BOUND + r'_' + str(d) + r'>' + FLOAT_NUMBER_REGEX + r')\)' 
+                 r'(?P<' + UPPER_BOUND + r'_' + str(d) + r'>' + FLOAT_NUMBER_REGEX + r')\)'
 
 
     @staticmethod
@@ -78,7 +95,7 @@ class Parser:
         if is_function_info:
             return Parser.build_tuples_regex_for_dimension(1)
 
-        return r'\(' + r',\s*'.join([Parser.build_tuples_regex_for_dimension(d + 1) 
+        return r'\(' + r',\s*'.join([Parser.build_tuples_regex_for_dimension(d + 1)
                                      for d in range(n)]) + r'\)'
 
 

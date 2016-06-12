@@ -17,23 +17,25 @@ import sys
 
 class Consistency:
 
-    def __init__(self, input_file, plot_surfaces, input_generator, verbose=False):
+    def __init__(self, input_file, input_generator, plot_surfaces=True,
+                 plot_random_heights=True, verbose=False, path_to_plot=None):
         if input_generator is not None:
             self.n = input_generator.n
             self.grid_info = input_generator.grid_info
             self.no_points_per_axis = input_generator.no_points_per_axis
+            self.random_heights = input_generator.random_heights
             self.function_info = input_generator.function_info
             self.derivative_info = input_generator.derivative_info
-            self.random_heights = input_generator.random_heights
         else:
             self.n = Parser.init_dimension(input_file)
             self.grid_info = Parser.init_grid_info(input_file, self.n)
             self.no_points_per_axis = Parser.init_no_points_per_axis(self.grid_info)
+            self.random_heights = Parser.init_random_heights(input_file, self.n,
+                                                             self.no_points_per_axis)
             self.function_info = Parser.init_function_info(input_file, self.n,
                                                            self.no_points_per_axis)
             self.derivative_info = Parser.init_derivative_info(input_file, self.n,
                                                                self.no_points_per_axis)
-            self.random_heights = None
 
         # Number of decision variables (integer).
         self.no_vars = np.prod(self.no_points_per_axis)
@@ -44,8 +46,14 @@ class Consistency:
         # Maximum heights for greatest witness of consistency (n-dim numpy array).
         self.max_heights = np.zeros(self.no_points_per_axis)
 
+        # Specifies the path to which the plots will be saved (if 2D case and consistent input).
+        self.path_to_plot = path_to_plot
+
         # Flag which specifies whether the surfaces will be plotted for the 2D case.
         self.plot_surfaces = plot_surfaces
+
+        # Flag which specifiec whether the random heights used to generate data will be plotted.
+        self.plot_random_heights = plot_random_heights
 
         # Flag for verbose logging.
         self.verbose = verbose
@@ -209,6 +217,7 @@ class Consistency:
         fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
         ax.set_axis_bgcolor('#34495e')
+        ax.view_init(elev=30, azim=-30)
 
         # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in
         # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
@@ -225,7 +234,7 @@ class Consistency:
         greatest_surface = mpatches.Patch(color='#e74c3c', label='Greatest Surface')
         legend_handles = [greatest_surface, least_surface]
 
-        if self.random_heights is not None:
+        if self.plot_random_heights:
             ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5,
                             antialiased=False, triangles=triangles)
             original_surface = mpatches.Patch(color='#27ae60', label='Original Surface')
@@ -238,9 +247,9 @@ class Consistency:
         ax.set_zlabel('\n\nZ axis', color='white')
         ax.set_zlim(min(min_z) - 1.0, max(max_z) + 1.0)
 
-        ax.tick_params(axis='x', colors='white')
-        ax.tick_params(axis='y', colors='white')
-        ax.tick_params(axis='z', colors='white')
+        ax.tick_params(axis='x', colors='white', labelsize=16)
+        ax.tick_params(axis='y', colors='white', labelsize=16)
+        ax.tick_params(axis='z', colors='white', labelsize=16)
 
         plt.xticks(self.grid_info[0])
         plt.yticks(self.grid_info[1])
@@ -330,8 +339,12 @@ def command_line_arguments():
                       help='Specifies whether randomly inconsistent input is generated.')
     parser.add_option('', '--from-poly', dest='from_poly', action='store_true',
                       help='Specifies whether automatic input is generated from a polynomial.')
-    parser.add_option('', '--plot', dest='plot_surfaces', action='store_true',
+    parser.add_option('', '--plot', dest='plot_surfaces', action='store_true', default=True,
                       help='Specifies whether surfaces will be plotted for the 2D case.')
+    parser.add_option('', '--plot-rand-heights', dest='plot_rand_heights',
+                      action='store_true', default=False,
+                      help='Specifies whether the random heights used to generate consistent '
+                           'input will be plotted in addition to the minimal and maximal surfaces.')
     parser.add_option('-e', '--epsilon', dest='epsilon', type='float',
                       help='Specifies the tolerance value for generating random intervals for '
                            'function and derivative information, respectively.')
@@ -340,6 +353,8 @@ def command_line_arguments():
                       help='Specifies whether the points per axis are generated randomly. By '
                            'default, points are equally spaced on each axis.')
     parser.add_option('', '--verbose', dest='verbose', action='store_true', default=False,
+                      help='Specifies whether the LP problem will be logged to console.')
+    parser.add_option('', '--path', dest='verbose', action='store_true', default=False,
                       help='Specifies whether the LP problem will be logged to console.')
 
     return parser.parse_args()
@@ -383,7 +398,14 @@ def main():
                                          options.epsilon)
         input_generator.generate_test_file()
 
-    cons = Consistency(options.input_file, options.plot_surfaces, input_generator, options.verbose)
+    cons = Consistency(options.input_file,
+                       input_generator,
+                       options.plot_surfaces,
+                       options.plot_rand_heights,
+                       options.verbose,
+                       path_to_plot=None)
+
+    # Run the LP algorithm to decide consistency.
     cons.solve_LP_problem()
 
 

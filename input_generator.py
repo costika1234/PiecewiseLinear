@@ -17,7 +17,7 @@ POLY_MAX_COEF = 40
 OFFSET = 0.1
 
 RANDOM_LOWER_BOUND = 10
-RANDOM_UPPER_BOUND = 20
+RANDOM_UPPER_BOUND = 30
 
 def _pickle_method(m):
     if m.im_self is None:
@@ -200,10 +200,10 @@ class InputGenerator:
                                random_partial_derivative == ith_partial:
                                 f_lower = self.function_info[random_interior_grid_index][0]
                                 f_upper = self.function_info[random_interior_grid_index][1]
-                                max_gradient = abs(f_upper - f_lower) / grid_diff
+                                max_slope = abs(f_upper - f_lower) / grid_diff
 
-                                inconsistent_interval = (max_gradient + OFFSET, 3 * max_gradient)
-                                d_values[ith_partial] = inconsistent_interval
+                                # Assign the inconsistent interval.
+                                d_values[ith_partial] = (max_slope + OFFSET, max_slope + 5 * OFFSET)
                             else:
                                 d_values[ith_partial] = (min_b, max_b)
 
@@ -249,16 +249,21 @@ class InputGenerator:
         self.init_random_heights()
 
         with open(self.input_file, 'a+') as f:
+            # Random heights.
+            f.write('\n# Random heights used to generate input:\n')
+            self.traverse_nd_array(self.random_heights, f, self.n)
+
             # Function information.
             f.write('\n# Function information (specified as a %d-dimensional array of intervals, '
                     'where an entry is of the form (c-, c+), c- <= c+, and represents the '
-                    'constraint for the function value at a particular grid point):\n' % self.n)
+                    'constraint for the function value within the corresponding sub-hyper-rectangle'
+                    '):\n' % self.n)
             self.function_info = self.generate_tuples_info(f, is_function_info=True)
 
             # Derivative information.
             f.write('\n# Derivative information (specified as a %d-dimensional array of tuples of '
                     'intervals, where an entry is of the form ((c1-, c1+), (c2-, c2+), ...), '
-                    'ci- <= ci+, and represents the constraints along each partial derivative at a '
-                    'particular grid point):\n' % self.n)
+                    'ci- <= ci+, and represents the constraints along each partial derivative '
+                    'within the corresponding sub-hyper-rectangle):\n' % self.n)
             self.derivative_info = self.generate_tuples_info(f, is_function_info=False)
 

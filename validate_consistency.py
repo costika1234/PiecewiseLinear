@@ -47,7 +47,7 @@ class ConsistencyValidator:
 
                     # Silence the print statements to stdout.
                     with Utils.nostdout():
-                        cons = Consistency(PATH_TO_FILE, False, input_gen)
+                        cons = Consistency(PATH_TO_FILE, input_gen, False, False, True, None)
                         result = cons.solve_LP_problem()
 
                     if result is not self.is_input_consistent:
