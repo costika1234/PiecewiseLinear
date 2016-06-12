@@ -5,6 +5,7 @@ from input_generator import InputGenerator
 from mpl_toolkits.mplot3d import Axes3D
 from optparse import OptionParser
 from parser import Parser
+from timeit import default_timer as timer
 from utils import Utils
 
 import itertools
@@ -14,6 +15,12 @@ import numpy as np
 import re
 import sympy as sp
 import sys
+
+INPUT_TIME  = 0
+MATRIX_TIME = 0
+LP_1_TIME   = 0
+LP_2_TIME   = 0
+TOTAL_TIME  = 0
 
 class Consistency:
 
@@ -57,6 +64,8 @@ class Consistency:
 
 
     def solve_LP_problem(self):
+        LP_START = timer()
+
         (f_coef_matrix, f_column_vector) = self.build_function_coef_matrix_and_column_vector()
         (d_coef_matrix, d_column_vector) = self.build_derivative_coef_matrix_and_column_vector()
 
@@ -65,7 +74,17 @@ class Consistency:
         coef_matrix = sparse([f_coef_matrix, d_coef_matrix])
         column_vector = matrix([f_column_vector, d_column_vector])
 
-        min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
+        LP_1 = timer()
+        MATRIX_TIME = LP_1 - LP_START
+        # print "Time spent in creating matrix form:", MATRIX_TIME
+
+        with Utils.nostdout():
+            min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
+
+        LP_2 = timer()
+        LP_1_TIME = LP_2 - LP_1
+        # print "Time spent in solving LP problem:", LP_1_TIME
+
         is_consistent = min_sol['x'] is not None
 
         # Print the LP problem for debugging purposes.
@@ -74,13 +93,16 @@ class Consistency:
 
         if is_consistent:
             self.min_heights = np.array(min_sol['x']).reshape(self.no_points_per_axis)
-            print np.around(self.min_heights, decimals=2)
+            # print np.around(self.min_heights, decimals=2)
 
             # Since consistency has been established, solve the converse LP problem to get the
             # maximal bounding surface.
-            max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
+
+            with Utils.nostdout():
+                max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
+
             self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
-            print np.around(self.max_heights, decimals=2)
+            # print np.around(self.max_heights, decimals=2)
 
             if self.plot_surfaces:
                 self.plot_3D_objects_for_2D_case()
@@ -88,7 +110,11 @@ class Consistency:
         else:
             print 'No witness for consistency found.'
 
-        return is_consistent
+        LP_END = timer()
+        LP_2_TIME = LP_END - LP_2
+        # print "Time spent solving converse LP problem:", LP_2_TIME
+
+        return (MATRIX_TIME, LP_1_TIME, LP_2_TIME)
 
 
     def build_constraints_from_function_info(self):
@@ -336,7 +362,7 @@ def command_line_arguments():
                       help='Specifies whether randomly inconsistent input is generated.')
     parser.add_option('', '--from-poly', dest='from_poly', action='store_true',
                       help='Specifies whether automatic input is generated from a polynomial.')
-    parser.add_option('', '--plot', dest='plot_surfaces', action='store_true', default=True,
+    parser.add_option('', '--plot', dest='plot_surfaces', action='store_true', default=False,
                       help='Specifies whether surfaces will be plotted for the 2D case.')
     parser.add_option('', '--plot-rand-heights', dest='plot_rand_heights',
                       action='store_true', default=False,
@@ -383,6 +409,8 @@ def main():
     validate_options(options)
     input_generator = None
 
+    START = timer()
+
     if options.gen_cons_input or options.gen_incons_input:
         input_generator = InputGenerator(options.input_file,
                                          options.gen_cons_input is not None,
@@ -393,6 +421,10 @@ def main():
                                          options.epsilon)
         input_generator.generate_test_file()
 
+    INPUT_DONE = timer()
+    INPUT_TIME = INPUT_DONE - START
+    print "Time spent generating input:", INPUT_TIME
+
     cons = Consistency(options.input_file,
                        input_generator,
                        options.plot_surfaces,
@@ -401,6 +433,13 @@ def main():
 
     # Run the LP algorithm to decide consistency.
     cons.solve_LP_problem()
+
+    END = timer()
+    TOTAL_TIME = END - START
+
+    print "Total time spent:", TOTAL_TIME
+
+    return (INPUT_TIME, MATRIX_TIME, LP_1_TIME, LP_2_TIME, TOTAL_TIME)
 
 
 if __name__ == '__main__':
