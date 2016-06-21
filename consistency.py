@@ -214,7 +214,7 @@ class Consistency:
         fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
         ax.set_axis_bgcolor('#34495e')
-        ax.view_init(elev=20, azim=-30)
+        ax.view_init(elev=30, azim=-45)
 
         # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in
         # counter-clockwise fashion and supply there labels to the plot_trisurf function call.
@@ -222,9 +222,9 @@ class Consistency:
         y_dim = self.no_points_per_axis[1]
         triangles = Utils.get_triangulation(x_dim, y_dim)
 
-        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=0.5, antialiased=False,
+        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=1, antialiased=False,
                         triangles=triangles)
-        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=0.5, antialiased=False,
+        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=1, antialiased=False,
                         triangles=triangles)
 
         least_surface = mpatches.Patch(color='#3498db', label='Least Surface')
@@ -232,7 +232,7 @@ class Consistency:
         legend_handles = [greatest_surface, least_surface]
 
         if self.plot_random_heights:
-            ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5,
+            ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=1,
                             antialiased=False, triangles=triangles)
             original_surface = mpatches.Patch(color='#27ae60', label='Original Surface')
             legend_handles = [greatest_surface, original_surface, least_surface]
@@ -248,8 +248,13 @@ class Consistency:
         ax.tick_params(axis='y', colors='white', labelsize=16)
         ax.tick_params(axis='z', colors='white', labelsize=16)
 
-        plt.xticks(self.grid_info[0])
-        plt.yticks(self.grid_info[1])
+        if x_dim > 10 and y_dim > 10:
+            plt.xticks([0, 0.2, 0.4, 0.6, 0.8, 1])
+            plt.yticks([0, 0.2, 0.4, 0.6, 0.8, 1])
+        else:
+            plt.xticks(np.around(self.grid_info[0], 2))
+            plt.yticks(np.around(self.grid_info[1], 2))
+
         plt.show()
 
 

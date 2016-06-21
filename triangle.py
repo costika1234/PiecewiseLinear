@@ -60,6 +60,32 @@ def compute_plane_gradient(p1, p2, p3):
     return (- a / c, - b / c)
 
 
+def compute_plane_gradient_2(p1, p2, p3):
+    # Equation of type: a x + b y + c z + d = 0.
+    # Return gradient as 2D point: (-a / c, -b / c)
+    # p1, p2, p3 are Point3D objects.
+    plane_equation = Plane(p1, p2, p3).equation()
+
+    plane_equation_poly = poly(str(plane_equation), gens=sp.symbols(['x', 'y', 'z']))
+    a = plane_equation_poly.diff('x')
+    b = plane_equation_poly.diff('y')
+    c = plane_equation_poly.diff('z')
+
+    return (- a / c, - b / c)
+
+
+def compute_point_coords(start, end, index):
+    if index == 2:
+        return Point3D(start[0], start[1], 'h2')
+    elif index == 3:
+        return Point3D(end[0], end[1], 'h3')
+
+    return Point3D('(1 - a%d) * %f + a%d * %f' % (index, start[0], index, end[0]),
+                   '(1 - a%d) * %f + a%d * %f' % (index, start[1], index, end[1]),
+                   'h' + str(index))
+
+
+
 class ConsistencyTriangle:
 
     def __init__(self):
@@ -127,9 +153,28 @@ class ConsistencyTriangle:
             # Try to determine triangulation of the given triangle.
             print "Triangulating..."
 
-            # Compute B - Gradient(P) = B' (thus, B' will have vertices in terms of h1, h2, h3).
-            for point in self.polygon:
-                print point, gradient
+            # Consider N = # of polygon sides points along a side of the triangle.
+            # Thus, we will introduce heights h4, h5, ..., h(N+3).
+            points_along_side = []
+            points_along_side.append(compute_point_coords(self.triangle[1], self.triangle[2], 2))
+
+            for index in range(len(self.polygon)):
+                points_along_side.append(compute_point_coords(self.triangle[1],
+                                                              self.triangle[2], index + 4))
+
+            points_along_side.append(compute_point_coords(self.triangle[1], self.triangle[2], 3))
+
+            fixed_vertex = Point3D(self.triangle[0][0], self.triangle[0][1], 'h1')
+            all_triangles = zip(*([fixed_vertex] * (1 + len(self.polygon)),
+                                  points_along_side,
+                                  points_along_side[1:]))
+
+            all_gradients = [compute_plane_gradient_2(p1, p2, p3) for (p1, p2, p3) in all_triangles]
+
+            for gradient in all_gradients:
+                print gradient
+
+
 
 
 
