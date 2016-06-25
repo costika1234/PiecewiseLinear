@@ -7,7 +7,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from optparse import OptionParser
 from parser import Parser
 from scipy.spatial import ConvexHull
-from sympy import Plane, Point3D, poly, Line, Point2D
+from sympy import Plane, Point3D, poly, Line, Point2D, Segment
 from utils import Utils
 
 import itertools
@@ -20,47 +20,38 @@ import sys
 
 
 def init_triangle_vertices():
-    return [(2, 2), (4, 2), (2.5, 3.5)]
+    return [(2, 0), (4, 0), (2.5, 4)]
 
 
 def init_function_info():
-    return (2, 3.95)
+    return (0, 0.5)
 
 
 def init_convex_polygon():
-    # points = np.random.uniform(0.5, 2, 20).reshape((10, 2))
-    # convex_hull = ConvexHull(points)
-    # polygon_vertices = []
+    # Return polygon vertices in counter-clockwise order.
 
-    # for vertex in convex_hull.vertices:
-    #     polygon_vertices.append(tuple(convex_hull.points[vertex]))
+    points = np.random.uniform(-10, 100, 20).reshape((10, 2))
+    convex_hull = ConvexHull(points)
+    polygon_vertices = []
 
-    polygon_vertices = [
-        (0.68057115927045464, 1.0814584085563212),
-        (1.8806783285804756, 0.7398107495124151),
-        (1.7257636277279738, 1.7320128263634973),
-        (1.5760258289686251, 1.8376157951865417),
-        (1.0106316531913753, 1.6809045490812751)]
+    for vertex in convex_hull.vertices:
+         polygon_vertices.append(tuple(convex_hull.points[vertex]))
+
+    # polygon_vertices = list(reversed([(0, 1), (1, 0), (0, -1), (-1, 0)]))
+
+    # polygon_vertices = [
+    #      (0.68057115927045464, 1.0814584085563212),
+    #      (1.8806783285804756, 0.7398107495124151),
+    #      (1.7257636277279738, 1.7320128263634973),
+    #      (1.5760258289686251, 1.8376157951865417),
+    #      (1.0106316531913753, 1.6809045490812751)]
+
+    print polygon_vertices
 
     return polygon_vertices
 
 
 def compute_plane_gradient(p1, p2, p3):
-    # Equation of type: a x + b y + c z + d = 0.
-    # Return gradient as 2D point: (-a / c, -b / c)
-    plane_equation = Plane(Point3D(p1[0], p1[1], 'h1'),
-                           Point3D(p2[0], p2[1], 'h2'),
-                           Point3D(p3[0], p3[1], 'h3')).equation()
-
-    plane_equation_poly = poly(str(plane_equation), gens=sp.symbols(['x', 'y', 'z']))
-    a = plane_equation_poly.diff('x')
-    b = plane_equation_poly.diff('y')
-    c = plane_equation_poly.diff('z')
-
-    return (- a / c, - b / c)
-
-
-def compute_plane_gradient_2(p1, p2, p3):
     # Equation of type: a x + b y + c z + d = 0.
     # Return gradient as 2D point: (-a / c, -b / c)
     # p1, p2, p3 are Point3D objects.
@@ -72,18 +63,6 @@ def compute_plane_gradient_2(p1, p2, p3):
     c = plane_equation_poly.diff('z')
 
     return (- a / c, - b / c)
-
-
-def compute_point_coords(start, end, index):
-    if index == 2:
-        return Point3D(start[0], start[1], 'h2')
-    elif index == 3:
-        return Point3D(end[0], end[1], 'h3')
-
-    return Point3D('(1 - a%d) * %f + a%d * %f' % (index, start[0], index, end[0]),
-                   '(1 - a%d) * %f + a%d * %f' % (index, start[1], index, end[1]),
-                   'h' + str(index))
-
 
 
 class ConsistencyTriangle:
@@ -98,32 +77,39 @@ class ConsistencyTriangle:
         # Derivative information (convex polygon given by collection of vertices).
         self.polygon = init_convex_polygon()
 
+        self.polygon_lines = []
+        self.adjacent_polygon_points = []
+
         self.min_heights = np.zeros(3)
         self.max_heights = np.zeros(3)
 
 
     def solveLP(self):
         # Check simple case when gradient of plane is contained within the convex polygon.
-        gradient = compute_plane_gradient(self.triangle[0], self.triangle[1], self.triangle[2])
+        gradient = compute_plane_gradient(Point3D(self.triangle[0][0], self.triangle[0][1], 'h0'),
+                                          Point3D(self.triangle[1][0], self.triangle[1][1], 'h1'),
+                                          Point3D(self.triangle[2][0], self.triangle[2][1], 'h2'))
 
         # Get all adjacent pairs of points that make up all sides of the polygon.
-        points = zip(*[self.polygon, self.polygon[1:] + [self.polygon[0]]])
+        self.adjacent_polygon_points = zip(*[self.polygon, self.polygon[1:] + [self.polygon[0]]])
 
         # Vectors of coefficients.
         (h1_coefs, h2_coefs, h3_coefs, rhs_coefs) = ([], [], [], [])
 
-        for (curr_point, next_point) in points:
+        for (curr_point, next_point) in self.adjacent_polygon_points:
             # Choose clockwise order when constructing line of eq. a x + b y + c = 0 from 2 given
             # points. Then the semi-plane containing the convex polygon will be given by:
             # a x + b y + c <= 0.
             line = Line(Point2D(next_point), Point2D(curr_point))
+            self.polygon_lines.append(line)
+
             line_equation_poly = poly(str(line.equation()), gens=sp.symbols(['x', 'y']))
             gradient_poly = poly(str(line_equation_poly.eval(gradient)),
-                                 gens=sp.symbols(['h1', 'h2', 'h3']))
+                                 gens=sp.symbols(['h0', 'h1', 'h2']))
 
-            h1_coefs.append(float(gradient_poly.diff('h1').eval((1, 0, 0))))
-            h2_coefs.append(float(gradient_poly.diff('h2').eval((0, 1, 0))))
-            h3_coefs.append(float(gradient_poly.diff('h3').eval((0, 0, 1))))
+            h1_coefs.append(float(gradient_poly.diff('h0').eval((0, 0, 0))))
+            h2_coefs.append(float(gradient_poly.diff('h1').eval((0, 0, 0))))
+            h3_coefs.append(float(gradient_poly.diff('h2').eval((0, 0, 0))))
             rhs_coefs.append(-float(gradient_poly.eval((0, 0, 0))))
 
         # Construct LP problem.
@@ -143,6 +129,7 @@ class ConsistencyTriangle:
         is_consistent = min_sol['x'] is not None
 
         if is_consistent:
+            return False
             self.min_heights = np.array(min_sol['x'])
             print np.around(self.min_heights, decimals=2)
 
@@ -153,28 +140,93 @@ class ConsistencyTriangle:
             # Try to determine triangulation of the given triangle.
             print "Triangulating..."
 
-            # Consider N = # of polygon sides points along a side of the triangle.
-            # Thus, we will introduce heights h4, h5, ..., h(N+3).
-            points_along_side = []
-            points_along_side.append(compute_point_coords(self.triangle[1], self.triangle[2], 2))
-
-            for index in range(len(self.polygon)):
-                points_along_side.append(compute_point_coords(self.triangle[1],
-                                                              self.triangle[2], index + 4))
-
-            points_along_side.append(compute_point_coords(self.triangle[1], self.triangle[2], 3))
-
-            fixed_vertex = Point3D(self.triangle[0][0], self.triangle[0][1], 'h1')
-            all_triangles = zip(*([fixed_vertex] * (1 + len(self.polygon)),
-                                  points_along_side,
-                                  points_along_side[1:]))
-
-            all_gradients = [compute_plane_gradient_2(p1, p2, p3) for (p1, p2, p3) in all_triangles]
-
-            for gradient in all_gradients:
-                print gradient
+            # Perform triangulation w.r.t to a fixed vertex.
+            return self.triangulate(0) or self.triangulate(1) or self.triangulate(2)
 
 
+    def triangulate(self, vertex):
+        others = [0, 1, 2, 0, 1]
+        others = others[(vertex + 1):(vertex + 3)]
+        segment = Segment(self.triangle[others[0]], self.triangle[others[1]])
+        vertex_str = 'h' + str(vertex)
+        segment_heights_str = ['h' + str(other) for other in others]
+
+        new_points = []
+        counter = 2
+
+        for line in self.polygon_lines:
+            perp = line.perpendicular_line(Point2D(self.triangle[vertex][0],
+                                                   self.triangle[vertex][1]))
+            intersections = perp.intersection(segment)
+
+            if len(intersections) > 0:
+                counter = counter + 1
+                new_points.append(Point3D(intersections[0].x,
+                                          intersections[0].y,
+                                          'h' + str(counter)))
+
+        no_vars = counter + 1
+        all_side_points = [Point3D(segment.points[0][0],
+                                   segment.points[0][1],
+                                   segment_heights_str[0])] + new_points + \
+                          [Point3D(segment.points[1][0],
+                                   segment.points[1][1],
+                                   segment_heights_str[1])]
+        all_pairs = zip(all_side_points, all_side_points[1:])
+
+        h_coefs = matrix(0.0, (len(all_pairs) * len(self.polygon), no_vars))
+        rhs_coefs = []
+
+        for (idx1, pair) in enumerate(all_pairs):
+            # Compute gradient for each triangulation.
+            gradient = compute_plane_gradient(
+                Point3D(self.triangle[vertex][0], self.triangle[vertex][1], vertex_str),
+                        pair[0],
+                        pair[1])
+
+            heights_str = [str(pair[0][2]), str(pair[1][2])]
+            hs = [int(heights_str[0][1:]), int(heights_str[1][1:])]
+
+            # Ensure that each gradient is with the convex polygon.
+            for (idx2, (curr_point, next_point)) in enumerate(self.adjacent_polygon_points):
+                line = Line(Point2D(next_point), Point2D(curr_point))
+                line_equation_poly = poly(str(line.equation()), gens=sp.symbols(['x', 'y']))
+                gradient_poly = poly(str(line_equation_poly.eval(gradient)),
+                                     gens=sp.symbols([vertex_str, heights_str[0], heights_str[1]]))
+
+                row = idx1 * len(self.polygon) + idx2
+                h_coefs[row, 0] = float(gradient_poly.diff(vertex_str).eval((0, 0, 0)))
+                h_coefs[row, hs[0]] = float(gradient_poly.diff(heights_str[0]).eval((0, 0, 0)))
+                h_coefs[row, hs[1]] = float(gradient_poly.diff(heights_str[1]).eval((0, 0, 0)))
+                rhs_coefs.append(-float(gradient_poly.eval((0, 0, 0))))
+
+        ones = [1.0] * no_vars
+
+        # Final LP Problem.
+        objective_function_vector = matrix(ones)
+
+        # Coefficient matrix.
+        ones_matrix = spmatrix(ones, range(no_vars), range(no_vars))
+        heights_coef_matrix = h_coefs
+        bounds_coef_matrix = matrix([ones_matrix, -ones_matrix])
+        coef_matrix = sparse([heights_coef_matrix, bounds_coef_matrix])
+
+        # Column vector of right hand sides.
+        column_vector = matrix(rhs_coefs + \
+                               [self.bounds[1]] * no_vars + [-self.bounds[0]] * no_vars)
+
+        min_sol = solvers.lp(objective_function_vector, coef_matrix, column_vector)
+        is_consistent = min_sol['x'] is not None
+
+        if is_consistent:
+            self.min_heights = np.array(min_sol['x'])
+            print np.around(self.min_heights, decimals=2)
+
+            max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
+            self.max_heights = np.array(max_sol['x'])
+            print np.around(self.max_heights, decimals=2)
+
+        return is_consistent
 
 
 
@@ -204,8 +256,14 @@ class ConsistencyTriangle:
 
 
 def main():
-    cons = ConsistencyTriangle()
-    cons.solveLP()
+
+    for _ in range(10):
+        cons = ConsistencyTriangle()
+        if cons.solveLP():
+            print "Found consistent input!"
+            break
+
+
     # cons.plotDomain()
 
 

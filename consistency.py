@@ -210,7 +210,7 @@ class Consistency:
         min_z = self.min_heights.flatten()
         max_z = self.max_heights.flatten()
 
-        fig = plt.figure(figsize=(14.4, 9), facecolor='#34495e')
+        fig = plt.figure(figsize=(26.5, 12.12), facecolor='#34495e')
         fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
         ax.set_axis_bgcolor('#34495e')
