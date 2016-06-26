@@ -7,7 +7,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from optparse import OptionParser
 from parser import Parser
 from scipy.spatial import ConvexHull
-from sympy import Plane, Point3D, poly, Line, Point2D, Segment
+from sympy import Plane, Point3D, poly, Line, Point2D, Segment, Polygon
 from utils import Utils
 
 import itertools
@@ -20,33 +20,21 @@ import sys
 
 
 def init_triangle_vertices():
-    return [(2, 0), (4, 0), (2.5, 4)]
+    return [(0, 0), (1, 1), (-1, 1)]
 
 
 def init_function_info():
-    return (0, 0.5)
+    return (2, 10)
 
 
 def init_convex_polygon():
     # Return polygon vertices in counter-clockwise order.
-
-    points = np.random.uniform(-10, 100, 20).reshape((10, 2))
+    points = np.random.uniform(1, 3, 20).reshape((10, 2))
     convex_hull = ConvexHull(points)
     polygon_vertices = []
 
     for vertex in convex_hull.vertices:
          polygon_vertices.append(tuple(convex_hull.points[vertex]))
-
-    # polygon_vertices = list(reversed([(0, 1), (1, 0), (0, -1), (-1, 0)]))
-
-    # polygon_vertices = [
-    #      (0.68057115927045464, 1.0814584085563212),
-    #      (1.8806783285804756, 0.7398107495124151),
-    #      (1.7257636277279738, 1.7320128263634973),
-    #      (1.5760258289686251, 1.8376157951865417),
-    #      (1.0106316531913753, 1.6809045490812751)]
-
-    print polygon_vertices
 
     return polygon_vertices
 
@@ -78,7 +66,7 @@ class ConsistencyTriangle:
         self.polygon = init_convex_polygon()
 
         self.polygon_lines = []
-        self.adjacent_polygon_points = []
+        self.adj_polygon_points = []
 
         self.min_heights = np.zeros(3)
         self.max_heights = np.zeros(3)
@@ -91,12 +79,14 @@ class ConsistencyTriangle:
                                           Point3D(self.triangle[2][0], self.triangle[2][1], 'h2'))
 
         # Get all adjacent pairs of points that make up all sides of the polygon.
-        self.adjacent_polygon_points = zip(*[self.polygon, self.polygon[1:] + [self.polygon[0]]])
+        self.adj_polygon_points = zip(*[[self.polygon[-1]] + self.polygon[:-1],
+                                              self.polygon,
+                                              self.polygon[1:] + [self.polygon[0]]])
 
         # Vectors of coefficients.
         (h1_coefs, h2_coefs, h3_coefs, rhs_coefs) = ([], [], [], [])
 
-        for (curr_point, next_point) in self.adjacent_polygon_points:
+        for (prev_point, curr_point, next_point) in self.adj_polygon_points:
             # Choose clockwise order when constructing line of eq. a x + b y + c = 0 from 2 given
             # points. Then the semi-plane containing the convex polygon will be given by:
             # a x + b y + c <= 0.
@@ -104,6 +94,11 @@ class ConsistencyTriangle:
             self.polygon_lines.append(line)
 
             line_equation_poly = poly(str(line.equation()), gens=sp.symbols(['x', 'y']))
+
+            # Check if a x + b y + c <= 0 holds; if not, flip the line equation -- critical step!
+            if line_equation_poly.eval(prev_point) > 0:
+                line_equation_poly = -line_equation_poly
+
             gradient_poly = poly(str(line_equation_poly.eval(gradient)),
                                  gens=sp.symbols(['h0', 'h1', 'h2']))
 
@@ -129,7 +124,6 @@ class ConsistencyTriangle:
         is_consistent = min_sol['x'] is not None
 
         if is_consistent:
-            return False
             self.min_heights = np.array(min_sol['x'])
             print np.around(self.min_heights, decimals=2)
 
@@ -188,9 +182,13 @@ class ConsistencyTriangle:
             hs = [int(heights_str[0][1:]), int(heights_str[1][1:])]
 
             # Ensure that each gradient is with the convex polygon.
-            for (idx2, (curr_point, next_point)) in enumerate(self.adjacent_polygon_points):
+            for (idx2, (prev_point, curr_point, next_point)) in enumerate(self.adj_polygon_points):
                 line = Line(Point2D(next_point), Point2D(curr_point))
                 line_equation_poly = poly(str(line.equation()), gens=sp.symbols(['x', 'y']))
+                # Flip equation if necessary.
+                if line_equation_poly.eval(prev_point) > 0:
+                    line_equation_poly = -line_equation_poly
+
                 gradient_poly = poly(str(line_equation_poly.eval(gradient)),
                                      gens=sp.symbols([vertex_str, heights_str[0], heights_str[1]]))
 
@@ -203,6 +201,7 @@ class ConsistencyTriangle:
         ones = [1.0] * no_vars
 
         # Final LP Problem.
+        # Objective function.
         objective_function_vector = matrix(ones)
 
         # Coefficient matrix.
@@ -256,15 +255,9 @@ class ConsistencyTriangle:
 
 
 def main():
-
-    for _ in range(10):
-        cons = ConsistencyTriangle()
-        if cons.solveLP():
-            print "Found consistent input!"
-            break
-
-
-    # cons.plotDomain()
+    cons = ConsistencyTriangle()
+    cons.solveLP()
+    cons.plotDomain()
 
 
 if __name__ == '__main__':
