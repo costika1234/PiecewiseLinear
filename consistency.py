@@ -222,9 +222,9 @@ class Consistency:
         y_dim = self.no_points_per_axis[1]
         triangles = Utils.get_triangulation(x_dim, y_dim)
 
-        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=1, antialiased=False,
+        ax.plot_trisurf(x, y, min_z, cmap='Blues', linewidth=0.5, antialiased=False,
                         triangles=triangles)
-        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=1, antialiased=False,
+        ax.plot_trisurf(x, y, max_z, cmap='Reds', linewidth=0.5, antialiased=False,
                         triangles=triangles)
 
         least_surface = mpatches.Patch(color='#3498db', label='Least Surface')
@@ -232,7 +232,7 @@ class Consistency:
         legend_handles = [greatest_surface, least_surface]
 
         if self.plot_random_heights:
-            ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=1,
+            ax.plot_trisurf(x, y, self.random_heights.flatten(), cmap='Greens', linewidth=0.5,
                             antialiased=False, triangles=triangles)
             original_surface = mpatches.Patch(color='#27ae60', label='Original Surface')
             legend_handles = [greatest_surface, original_surface, least_surface]
