@@ -2,6 +2,7 @@
 
 from cvxopt import spmatrix
 from operator import mul
+from functools import reduce
 
 import contextlib
 import itertools
@@ -115,7 +116,7 @@ class Utils:
     @staticmethod
     def calculate_block_heights(no_points_per_axis):
         dimensions_prod = reduce(mul, no_points_per_axis)
-        return [dimensions_prod / no_points_per_axis[i] * (no_points_per_axis[i] - 1) \
+        return [dimensions_prod // no_points_per_axis[i] * (no_points_per_axis[i] - 1) \
                 for i in range(len(no_points_per_axis))]
 
 
@@ -145,8 +146,8 @@ class Utils:
             if no_sub_blocks == 1:
                 result += [0]
             else:
-                sub_block_width = width / no_sub_blocks
-                sub_block_height = block_heights[index] / no_sub_blocks
+                sub_block_width = width // no_sub_blocks
+                sub_block_height = block_heights[index] // no_sub_blocks
                 result += [sub_block_width - sub_block_height]
 
         return result
@@ -160,10 +161,10 @@ class Utils:
         # TODO: Refactor this method heavily!
 
         minus_ones_and_ones = [-1] * block_height + [1] * block_height
-        row_range = range(block_height) * 2
+        row_range = list(range(block_height)) * 2
 
         if no_sub_blocks == 1:
-            column_range_minus_ones = range(block_height)
+            column_range_minus_ones = list(range(block_height))
         else:
             column_range_minus_ones = []
 
@@ -208,4 +209,3 @@ class Utils:
         random_points_list.append(1.0)
 
         return random_points_list
-

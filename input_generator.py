@@ -4,7 +4,7 @@ from parser import Parser
 from sympy import poly
 from utils import Utils
 
-import copy_reg
+import copyreg
 import numpy as np
 import sympy as sp
 import multiprocessing
@@ -25,7 +25,7 @@ def _pickle_method(m):
     else:
         return getattr, (m.im_self, m.im_func.func_name)
 
-copy_reg.pickle(types.MethodType, _pickle_method)
+copyreg.pickle(types.MethodType, _pickle_method)
 
 class InputGenerator:
 
@@ -266,4 +266,3 @@ class InputGenerator:
                     'ci- <= ci+, and represents the constraints along each partial derivative '
                     'within the corresponding sub-hyper-rectangle):\n' % self.n)
             self.derivative_info = self.generate_tuples_info(f, is_function_info=False)
-

@@ -31,7 +31,7 @@ class Parser:
         with open(input_file, 'r') as f:
             for line in f:
                 if line.startswith(GRID_INFO_STRING):
-                    grid_list = [map(float, next(f).split()) for x in xrange(dimension)]
+                    grid_list = [list(map(float, next(f).split())) for x in range(dimension)]
                     return np.array(grid_list)
 
 
@@ -126,4 +126,3 @@ class Parser:
         return np.array(flat_nd_list, \
                         dtype=Utils.get_dtype(dimension, is_function_info)).reshape(
                         no_points_per_axis)
-

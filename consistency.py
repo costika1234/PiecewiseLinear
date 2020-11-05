@@ -38,7 +38,7 @@ class Consistency:
                                                                self.no_points_per_axis)
 
         # Number of decision variables (integer).
-        self.no_vars = np.prod(self.no_points_per_axis)
+        self.no_vars = np.prod(self.no_points_per_axis).item()
 
         # Minimum heights for least witness of consistency (n-dim numpy array).
         self.min_heights = np.zeros(self.no_points_per_axis)
@@ -74,19 +74,19 @@ class Consistency:
 
         if is_consistent:
             self.min_heights = np.array(min_sol['x']).reshape(self.no_points_per_axis)
-            print np.around(self.min_heights, decimals=2)
+            print(np.around(self.min_heights, decimals=2))
 
             # Since consistency has been established, solve the converse LP problem to get the
             # maximal bounding surface.
             max_sol = solvers.lp(-objective_function_vector, coef_matrix, column_vector)
             self.max_heights = np.array(max_sol['x']).reshape(self.no_points_per_axis)
-            print np.around(self.max_heights, decimals=2)
+            print(np.around(self.max_heights, decimals=2))
 
             if self.plot_surfaces:
                 self.plot_3D_objects_for_2D_case()
 
         else:
-            print 'No witness for consistency found.'
+            print('No witness for consistency found.')
 
         return is_consistent
 
@@ -200,7 +200,7 @@ class Consistency:
 
     def plot_3D_objects_for_2D_case(self):
         if self.n != 2:
-            print 'Plotting is only available for 2D domain.'
+            print('Plotting is only available for 2D domain.')
             return
 
         grid_points = Utils.get_grid_indices(self.no_points_per_axis, False)
@@ -210,10 +210,10 @@ class Consistency:
         min_z = self.min_heights.flatten()
         max_z = self.max_heights.flatten()
 
-        fig = plt.figure(figsize=(26.5, 12.12), facecolor='#34495e')
+        fig = plt.figure(figsize=(12, 8), facecolor='#34495e')
         fig.canvas.set_window_title('Consistency')
         ax = fig.gca(projection='3d')
-        ax.set_axis_bgcolor('#34495e')
+        ax.set_facecolor('#34495e')
         ax.view_init(elev=30, azim=-45)
 
         # Do not use Delaunay triangulation. Instead, generate the labels of the triangles in
@@ -262,20 +262,20 @@ class Consistency:
         grid_indices = Utils.get_grid_indices(self.no_points_per_axis, False)
         no_rows = coef_matrix.size[0]
         no_cols = coef_matrix.size[1]
-        no_d_constraints = (no_rows - 2 * self.no_vars) / 2
+        no_d_constraints = (no_rows - 2 * self.no_vars) // 2
 
-        print 'LP problem:'
+        print('LP problem:')
 
         for row in range(no_rows):
             non_zeros_indices = [(row + col * no_rows) for col in range(no_cols) \
                                   if coef_matrix[row + col * no_rows] != 0.0]
             # List of type [(value, true_row, true_col)], where value is either 1 or -1.
-            true_non_zero_indices = [(coef_matrix[non_zeros_index], row, non_zeros_index / no_rows)\
+            true_non_zero_indices = [(coef_matrix[non_zeros_index], row, non_zeros_index // no_rows) \
                                      for non_zeros_index in non_zeros_indices]
             terms = []
 
             for true_non_zero_index in true_non_zero_indices:
-                is_one = true_non_zero_index[0] == 1.0
+                is_one = true_non_zero_index[0] == 1
                 tup = grid_indices[true_non_zero_index[2]]
                 term = 'h_' + ','.join([str(t) for t in tup])
                 if not is_one:
@@ -285,12 +285,10 @@ class Consistency:
 
             if len(true_non_zero_indices) == 1:
                 if row < self.no_vars:
-                    print str(-vector[row + self.no_vars]) + \
-                        ' <= ' + terms[0] + ' <= ' + str(vector[row])
+                    print(f'{-vector[row + self.no_vars]} <= {terms[0]} <= {vector[row]}')
             else:
                 if row < no_rows - no_d_constraints:
-                    print str(-vector[row + no_d_constraints]) + \
-                        ' <= ' + terms[1] + ' ' + terms[0] + ' <= ' + str(vector[row])
+                    print(f'{-vector[row + no_d_constraints]} <= {terms[1]} {terms[0]} <= {vector[row]}')
 
 
 def command_line_arguments():
@@ -410,4 +408,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
